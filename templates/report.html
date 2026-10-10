@@ -58,6 +58,8 @@
   tr.dir:hover .subact { display: inline-flex; }
   .subact a { color: #0969da; cursor: pointer; font-size: 11px; white-space: nowrap; }
   .subact a:hover { text-decoration: underline; }
+  .subact a.off { color: #c0c4cc; cursor: default; }
+  .subact a.off:hover { text-decoration: none; }
 
   .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
   .s-IDENTICAL { background: #1a7f37; }
@@ -283,10 +285,7 @@ function render(){
           '<span class="chev'+(open?' open':'')+'">&#9654;</span>'+
           '<span class="dot s-'+st+'"></span><span class="nm">'+esc(d.name)+'</span>'+
           '<span class="fcount">'+c.total+'</span>'
-          +(d.dirs.size?'<span class="subact">'
-            +'<a data-exp="'+esc(d.path)+'">全部展开</a>'
-            +'<a data-col="'+esc(d.path)+'">全部折叠</a>'
-            +'</span>':'')+'</div></td>'+
+          +subactHtml(d)+'</div></td>'+
         '<td class="side"><span class="ok">'+c.countA+'</span></td>'+
         '<td class="side"><span class="ok">'+c.countB+'</span></td>'+
         '<td class="stat"><span class="tag t-'+st+' disabled">'+(st==='MIXED'?'有差异':STATUS_TEXT[st])+'</span></td>'+
@@ -322,9 +321,9 @@ function render(){
 document.getElementById('tbody').addEventListener('click',(ev)=>{
   // 子树局部展开/折叠：必须先于"整行切换"判断（按钮位于目录行内部）
   const exp=ev.target.closest('[data-exp]');
-  if(exp){ expandSubtree(exp.getAttribute('data-exp')); return; }
+  if(exp){ if(!exp.classList.contains('off')) expandSubtree(exp.getAttribute('data-exp')); return; }
   const col=ev.target.closest('[data-col]');
-  if(col){ collapseSubtree(col.getAttribute('data-col')); return; }
+  if(col){ if(!col.classList.contains('off')) collapseSubtree(col.getAttribute('data-col')); return; }
   // 目录行：点击任意位置展开/折叠
   const dirRow=ev.target.closest('tr[data-type="dir"]');
   if(dirRow){
@@ -346,19 +345,41 @@ document.getElementById('expandAll').addEventListener('click',()=>{
 });
 document.getElementById('collapseAll').addEventListener('click',()=>{ state.expanded.clear(); render(); });
 
-/** 递归展开某目录的全部子目录（该目录自身保持展开） */
+/** 递归展开某目录及其全部子目录 */
 function expandSubtree(path){
   const node=nodeIndex.get(path);
   if(!node) return;
+  // 自身必须一并展开：emit 只在该目录 open 时才渲染子行，
+  // 只标记后代而不展开自身，等于什么都不会显示
+  state.expanded.add(path);
   (function walk(n){ for(const d of n.dirs.values()){ state.expanded.add(d.path); walk(d); } })(node);
   render();
 }
-/** 递归折叠某目录的全部子目录（该目录自身保持展开，便于看到结果） */
+/** 递归折叠某目录的全部子目录；自身保持展开以便看到折叠结果 */
 function collapseSubtree(path){
   const node=nodeIndex.get(path);
   if(!node) return;
+  state.expanded.add(path);   // 自身收着的话，折叠结果同样不可见
   (function walk(n){ for(const d of n.dirs.values()){ state.expanded.delete(d.path); walk(d); } })(node);
   render();
+}
+/** 子树中目录总数与已展开数 */
+function subtreeStats(node){
+  let total=0, opened=0;
+  (function walk(n){ for(const d of n.dirs.values()){ total++; if(state.expanded.has(d.path)) opened++; walk(d); } })(node);
+  return { total, opened };
+}
+/** 目录行的局部展开/折叠按钮；无可操作项时置灰，避免点击后毫无反馈 */
+function subactHtml(d){
+  if(!d.dirs.size) return '';
+  const s=subtreeStats(d);
+  const canExp=s.opened<s.total, canCol=s.opened>0;
+  return '<span class="subact">'
+    +'<a data-exp="'+esc(d.path)+'" class="'+(canExp?'':'off')+'"'
+      +' title="展开全部 '+s.total+' 个子目录（已展开 '+s.opened+'）">全部展开</a>'
+    +'<a data-col="'+esc(d.path)+'" class="'+(canCol?'':'off')+'"'
+      +' title="折叠全部 '+s.opened+' 个已展开子目录">全部折叠</a>'
+    +'</span>';
 }
 
 let timer;
