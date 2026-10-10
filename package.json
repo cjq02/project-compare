@@ -4,7 +4,8 @@
   "private": true,
   "description": "对比两个项目的公共代码（路径/内容归一化 + 相似度分级 + HTML 报告）",
   "scripts": {
-    "compare": "node src/compare.js"
+    "compare": "node src/compare.js",
+    "serve": "node src/server.js"
   },
   "engines": {
     "node": ">=16"

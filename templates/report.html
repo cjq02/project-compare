@@ -91,6 +91,30 @@
   .vbtn.on { background: #0969da; color: #fff; border-color: #0969da; }
   .vbtn.on:hover { background: #0969da; }
   .trunc-note { padding: 8px 12px; background: #fff8c5; color: #9a6700; font-size: 12px; border-bottom: 1px solid var(--border); }
+
+  /* 同步条 */
+  .sync-bar { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sync-label { font-size: 12px; color: var(--muted); }
+  .sync-bar select { padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+  .sbtn { padding: 3px 12px; border: 1px solid var(--border); background: #fff; border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--text); }
+  .sbtn:hover { background: var(--hover); }
+  .sbtn:disabled { cursor: default; color: #c0c4cc; background: #fff; }
+  .sbtn.danger { background: #cf222e; color: #fff; border-color: #cf222e; }
+  .sbtn.danger:hover { background: #a40e26; }
+  .sbtn.ghost { background: transparent; }
+  .sync-confirm { display: flex; align-items: center; gap: 8px; }
+  .sync-path { font-family: Consolas, monospace; font-size: 11px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px; word-break: break-all; }
+  .sync-msg { font-size: 12px; }
+  .sync-msg.ok { color: #1a7f37; }
+  .sync-msg.err { color: #cf222e; }
+
+  /* 实时提示条 */
+  .livebar { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; align-items: center; gap: 10px;
+    background: #24292f; color: #fff; padding: 9px 14px; border-radius: 8px; font-size: 13px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.28); }
+  .livebar .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #d4a72c; flex-shrink: 0; }
+  .livebar .sbtn { background: #fff; border-color: #fff; }
+  .livebar .sbtn.ghost { background: transparent; color: #fff; border-color: #6e7681; }
   .modal-body { flex: 1; overflow: auto; }
   .diff-table { border-collapse: collapse; width: 100%; font-family: Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.55; }
   .diff-table th { position: sticky; top: 0; background: #f0f2f5; z-index: 2; padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12px; }
@@ -164,9 +188,31 @@
       <div class="title" id="modalTitle"></div>
       <div class="info" id="modalInfo"></div>
       <div class="view-toggle" id="viewToggle" style="display:none"></div>
+      <div class="sync-bar" id="syncBar" style="display:none">
+        <span class="sync-label">同步此文件</span>
+        <span id="syncMain">
+          <select id="syncDir">
+            <option value="A2B">A → B</option>
+            <option value="B2A">B → A</option>
+          </select>
+          <button class="sbtn" id="syncBtn">预览</button>
+        </span>
+        <span class="sync-confirm" id="syncConfirm" style="display:none">
+          <span class="sync-path" id="syncPath"></span>
+          <button class="sbtn danger" id="syncOk">确认执行</button>
+          <button class="sbtn" id="syncCancel">取消</button>
+        </span>
+        <span class="sync-msg" id="syncMsg"></span>
+      </div>
     </div>
     <div class="modal-body" id="modalBody"></div>
   </div>
+</div>
+<div class="livebar" id="livebar" style="display:none">
+  <span class="live-dot"></span>
+  <span id="liveText">项目有变更</span>
+  <button class="sbtn" id="liveRefresh">重新对比并刷新</button>
+  <button class="sbtn ghost" id="liveClose">忽略</button>
 </div>
 <script>
 const DATA = /*__DATA__*/null;
@@ -413,6 +459,7 @@ function openModal(entry){
   if(entry.relB) info.push('B: '+esc(entry.relB));
   document.getElementById('modalInfo').innerHTML=info.join('<span style="color:#d0d7de">|</span>');
   renderModalView();
+  renderSyncBar();
   document.getElementById('overlay').classList.add('open');
 }
 
@@ -497,6 +544,95 @@ document.getElementById('viewToggle').addEventListener('click',(ev)=>{
 });
 document.getElementById('overlay').addEventListener('click',(e)=>{ if(e.target===e.currentTarget) e.currentTarget.classList.remove('open'); });
 document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') document.getElementById('overlay').classList.remove('open'); });
+
+/* ---------- 同步（仅在弹窗内对单个文件操作，不做删除） ---------- */
+const SYNCABLE=new Set(['SIMILAR','DIVERGED']);
+/** 仅当文件两侧路径都存在、且状态可同步时才显示同步条 */
+function renderSyncBar(){
+  const e=modalEntry;
+  const bar=document.getElementById('syncBar');
+  const ok=!!e&&SYNCABLE.has(e.status)&&!!e.relA&&!!e.relB;
+  bar.style.display=ok?'':'none';
+  if(ok){
+    document.getElementById('syncMain').style.display='';
+    document.getElementById('syncConfirm').style.display='none';
+    document.getElementById('syncMsg').textContent='';
+    document.getElementById('syncMsg').className='sync-msg';
+  }
+}
+document.getElementById('syncBtn').addEventListener('click',()=>{
+  const e=modalEntry; if(!e) return;
+  const dir=document.getElementById('syncDir').value;
+  const fromRel=dir==='A2B'?e.relA:e.relB;
+  const toRel=dir==='A2B'?e.relB:e.relA;
+  const fromProj=dir==='A2B'?NAME_A:NAME_B;
+  const toProj=dir==='A2B'?NAME_B:NAME_A;
+  document.getElementById('syncPath').textContent=fromProj+'/'+fromRel+'  →  '+toProj+'/'+toRel;
+  document.getElementById('syncMain').style.display='none';
+  document.getElementById('syncConfirm').style.display='';
+  document.getElementById('syncMsg').textContent='';
+});
+document.getElementById('syncCancel').addEventListener('click',()=>{
+  document.getElementById('syncConfirm').style.display='none';
+  document.getElementById('syncMain').style.display='';
+});
+document.getElementById('syncOk').addEventListener('click',async ()=>{
+  const e=modalEntry; if(!e) return;
+  const dir=document.getElementById('syncDir').value;
+  const msg=document.getElementById('syncMsg');
+  const btn=document.getElementById('syncOk');
+  btn.disabled=true; msg.textContent='同步中…'; msg.className='sync-msg';
+  try{
+    const res=await fetch('/api/sync',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({key:e.key,direction:dir})});
+    const o=await res.json();
+    if(o.ok){
+      msg.textContent='已同步';
+      msg.className='sync-msg ok';
+      document.getElementById('syncConfirm').style.display='none';
+      document.getElementById('syncMain').style.display='';
+      // 同步后报告已过期（服务端也会广播 changed）
+      showLive('已同步，报告已过期，可重新对比');
+    }else{
+      msg.textContent=o.error||'同步失败';
+      msg.className='sync-msg err';
+    }
+  }catch(err){
+    msg.textContent='请求失败（未通过服务访问？）：'+err.message;
+    msg.className='sync-msg err';
+  }finally{ btn.disabled=false; }
+});
+
+/* ---------- 实时提示：SSE + 手动刷新 ---------- */
+function showLive(text){
+  const bar=document.getElementById('livebar');
+  document.getElementById('liveText').textContent=text||'项目有变更';
+  bar.style.display='';
+}
+document.getElementById('liveClose').addEventListener('click',()=>{document.getElementById('livebar').style.display='none';});
+document.getElementById('liveRefresh').addEventListener('click',async ()=>{
+  const btn=document.getElementById('liveRefresh');
+  btn.disabled=true; btn.textContent='对比中…';
+  try{
+    const r=await fetch('/api/refresh',{method:'POST'});
+    const o=await r.json();
+    if(o.ok) location.reload();
+    else showLive('刷新失败：'+(o.error||'未知错误'));
+  }catch(err){ showLive('刷新失败：'+err.message); }
+  finally{ btn.disabled=false; btn.textContent='重新对比并刷新'; }
+});
+// 仅在通过服务访问时连接 SSE；file:// 直接打开时跳过（同步按钮也会提示不可用）
+if(location.protocol==='http:'||location.protocol==='https:'){
+  try{
+    const es=new EventSource('/api/events');
+    es.onmessage=(ev)=>{
+      let o={}; try{o=JSON.parse(ev.data);}catch(e){return;}
+      if(o.type==='changed') showLive(o.reason==='sync'?'文件已同步，报告已过期':'项目文件有变更');
+      else if(o.type==='error') showLive('对比失败：'+(o.message||''));
+    };
+    // 断线由 EventSource 自动重连
+  }catch(e){ /* 忽略 */ }
+}
 
 /* ---------- 顶部 ---------- */
 (function top(){

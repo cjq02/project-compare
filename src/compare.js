@@ -2,12 +2,8 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { scan } = require('./scanner');
-const { createNameForms, normalizePathKey } = require('./normalizer');
-const { comparePair } = require('./comparator');
-const { compileFilter } = require('./exclude');
 const { loadEnvFile, resolveOptions } = require('./config');
-const { writeReport } = require('./reporter');
+const { runCompare } = require('./engine');
 
 const HELP = `用法: node src/compare.js [项目A目录 项目B目录] [选项]
 
@@ -25,6 +21,7 @@ const HELP = `用法: node src/compare.js [项目A目录 项目B目录] [选项]
 .env 支持的键:
   PROJECT_A / PROJECT_B   两个项目目录
   OUT_DIR                 输出目录
+  PORT                    server.js 监听端口（默认 18899）
   THRESHOLD               相似度阈值
   MAX_DIFF_LINES          diff 最大行数
   INCLUDE_DIRS            白名单，逗号分隔（非空则只对比命中范围，推荐用于只看框架层）
@@ -44,6 +41,7 @@ const HELP = `用法: node src/compare.js [项目A目录 项目B目录] [选项]
 示例:
   node src/compare.js                              # 全部参数取自 .env
   node src/compare.js A B --include "{PROJECT}-vue/src/utils/**"
+  node src/server.js                               # 起服务：实时提示 + 弹窗内同步
 `;
 
 function parseArgs(argv) {
@@ -63,126 +61,30 @@ function parseArgs(argv) {
   return cli;
 }
 
-function main() {
-  const cli = parseArgs(process.argv.slice(2));
+/** 读取 .env 并合并 CLI 参数；用于 server.js 与本 CLI */
+function buildOptions(cli) {
   const envFile = cli.envFile || (fs.existsSync(path.join(process.cwd(), '.env')) ? path.join(process.cwd(), '.env') : null);
   const env = loadEnvFile(envFile);
-  const opts = resolveOptions(env, cli);
+  return { opts: resolveOptions(env, cli), envFile };
+}
 
-  const dirA = opts.dirA && path.resolve(opts.dirA);
-  const dirB = opts.dirB && path.resolve(opts.dirB);
-  if (!dirA || !dirB) {
-    console.error('未指定项目目录：请在 .env 中设置 PROJECT_A / PROJECT_B，或用命令行传入两个目录\n');
-    console.error(HELP);
+function main() {
+  const cli = parseArgs(process.argv.slice(2));
+  const { opts, envFile } = buildOptions(cli);
+
+  console.log(`配置文件: ${envFile || '（无，使用默认值）'}`);
+
+  let result;
+  try {
+    result = runCompare(opts, envFile, console.log);
+  } catch (e) {
+    console.error(e.message);
     process.exit(1);
   }
-  for (const d of [dirA, dirB]) {
-    if (!fs.existsSync(d)) { console.error(`目录不存在: ${d}`); process.exit(1); }
-  }
 
-  const nameA = path.basename(dirA);
-  const nameB = path.basename(dirB);
-  const formsA = createNameForms(nameA);
-  const formsB = createNameForms(nameB);
-  const filter = compileFilter(opts.include, opts.exclude);
-  const outDir = path.resolve(opts.out);
-
-  console.log(`项目A: ${nameA}  (${dirA})`);
-  console.log(`项目B: ${nameB}  (${dirB})`);
-  console.log(`配置文件: ${envFile || '（无，使用默认值）'}`);
-  if (filter.includePatterns.length) {
-    console.log(`白名单 ${filter.includePatterns.length} 条（只对比命中范围）:`);
-    filter.includePatterns.forEach((p) => console.log(`  + ${p}`));
-  } else {
-    console.log(`白名单: 未设置（全量对比）`);
-  }
-  if (filter.excludePatterns.length) {
-    console.log(`黑名单 ${filter.excludePatterns.length} 条:`);
-    filter.excludePatterns.forEach((p) => console.log(`  - ${p}`));
-  }
-  console.log('');
-
-  console.log('[1/3] 扫描文件...');
-  const relsA0 = scan(dirA);
-  const relsB0 = scan(dirB);
-  console.log(`  A: ${relsA0.length} 个文件, B: ${relsB0.length} 个文件（过滤前）`);
-
-  console.log('[2/3] 路径归一化并比较...');
-  let excludedCount = 0;
-  const keep = (rels, nameForms) => rels.filter((rel) => {
-    const drop = !filter.keep(rel, normalizePathKey(rel, nameForms));
-    if (drop) excludedCount++;
-    return !drop;
-  });
-  const relsA = keep(relsA0, formsA);
-  const relsB = keep(relsB0, formsB);
-  console.log(`  排除 ${excludedCount} 个文件 -> A: ${relsA.length}, B: ${relsB.length}`);
-
-  const mapA = new Map(relsA.map((rel) => [normalizePathKey(rel, formsA), { full: path.join(dirA, rel), rel }]));
-  const mapB = new Map(relsB.map((rel) => [normalizePathKey(rel, formsB), { full: path.join(dirB, rel), rel }]));
-
-  const commonKeys = [...mapA.keys()].filter((k) => mapB.has(k));
-  const onlyA = [...mapA.keys()].filter((k) => !mapB.has(k)).sort();
-  const onlyB = [...mapB.keys()].filter((k) => !mapA.has(k)).sort();
-
-  const files = [];
-  const cmpOpts = { similarityThreshold: opts.threshold, maxDiffLines: opts.maxDiffLines };
-  let done = 0;
-  for (const key of commonKeys) {
-    const a = mapA.get(key), b = mapB.get(key);
-    const r = comparePair(a.full, b.full, formsA, formsB, cmpOpts);
-    files.push({
-      key,
-      relA: a.rel,
-      relB: b.rel,
-      status: r.status,
-      similarity: r.similarity,
-      sizeA: r.sizeA,
-      sizeB: r.sizeB,
-      linesA: r.linesA,
-      linesB: r.linesB,
-      diff: r.diff,
-      fullDiff: r.fullDiff,
-    });
-    if (++done % 200 === 0) console.log(`  已比较 ${done}/${commonKeys.length}`);
-  }
-  for (const key of onlyA) {
-    const e = mapA.get(key);
-    files.push({ key, relA: e.rel, status: 'ONLY_A', sizeA: fs.statSync(e.full).size, sizeB: null, linesA: null, linesB: null, similarity: null, diff: null });
-  }
-  for (const key of onlyB) {
-    const e = mapB.get(key);
-    files.push({ key, relB: e.rel, status: 'ONLY_B', sizeA: null, sizeB: fs.statSync(e.full).size, linesA: null, linesB: null, similarity: null, diff: null });
-  }
-  files.sort((x, y) => x.key.localeCompare(y.key));
-
-  const count = (status) => files.filter((f) => f.status === status).length;
-  const reportData = {
-    meta: {
-      projectA: nameA, projectB: nameB, dirA, dirB,
-      generatedAt: new Date().toISOString(),
-      threshold: opts.threshold,
-      includePatterns: filter.includePatterns,
-      excludePatterns: filter.excludePatterns,
-      excludedCount,
-      envFile,
-    },
-    summary: {
-      common: commonKeys.length,
-      identical: count('IDENTICAL'),
-      sameByRename: count('SAME_BY_RENAME'),
-      similar: count('SIMILAR'),
-      diverged: count('DIVERGED'),
-      onlyA: onlyA.length,
-      onlyB: onlyB.length,
-    },
-    files,
-  };
-
-  console.log('[3/3] 生成报告...');
-  const { jsonPath, htmlPath } = writeReport(reportData, outDir);
-
+  const { reportData, jsonPath, htmlPath } = result;
   const s = reportData.summary;
+  const nameA = reportData.meta.projectA, nameB = reportData.meta.projectB;
   console.log('');
   console.log('========== 对比结果 ==========');
   console.log(`归一化后共有文件 : ${s.common}`);
@@ -192,7 +94,7 @@ function main() {
   console.log(`  差异较大       : ${s.diverged}`);
   console.log(`仅 ${nameA} 独有   : ${s.onlyA}`);
   console.log(`仅 ${nameB} 独有   : ${s.onlyB}`);
-  console.log(`（已按白/黑名单过滤掉 : ${excludedCount}）`);
+  console.log(`（已按白/黑名单过滤掉 : ${reportData.meta.excludedCount}）`);
   console.log('');
   console.log(`报告: ${htmlPath}`);
   console.log(`数据: ${jsonPath}`);
@@ -200,9 +102,11 @@ function main() {
   if (s.similar > 0) {
     console.log('');
     console.log('漂移最严重的公共代码 Top 15:');
-    files.filter((f) => f.status === 'SIMILAR').sort((x, y) => x.similarity - y.similarity).slice(0, 15)
+    reportData.files.filter((f) => f.status === 'SIMILAR').sort((x, y) => x.similarity - y.similarity).slice(0, 15)
       .forEach((f) => console.log(`  ${(f.similarity * 100).toFixed(1)}%  ${f.key}`));
   }
 }
 
-main();
+module.exports = { parseArgs, buildOptions };
+
+if (require.main === module) main();
