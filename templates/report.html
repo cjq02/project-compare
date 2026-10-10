@@ -91,7 +91,6 @@
   .vbtn.on { background: #0969da; color: #fff; border-color: #0969da; }
   .vbtn.on:hover { background: #0969da; }
   .trunc-note { padding: 8px 12px; background: #fff8c5; color: #9a6700; font-size: 12px; border-bottom: 1px solid var(--border); }
-  .diff-table.full td.l, .diff-table.full td.r { background: #fff; }
   .modal-body { flex: 1; overflow: auto; }
   .diff-table { border-collapse: collapse; width: 100%; font-family: Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.55; }
   .diff-table th { position: sticky; top: 0; background: #f0f2f5; z-index: 2; padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12px; }
@@ -423,7 +422,7 @@ function renderModalView(){
   const body=document.getElementById('modalBody');
   const toggle=document.getElementById('viewToggle');
   if(!entry){ body.innerHTML=''; toggle.style.display='none'; return; }
-  const canFull=entry.contentA!=null||entry.contentB!=null;
+  const canFull=!!entry.fullDiff;
   const canDiff=!!entry.diff;
   // 只有既有正文又有 diff 的才提供切换
   if(canFull&&canDiff){
@@ -451,31 +450,13 @@ function renderModalView(){
   }
 }
 
-/** 完整内容视图：两侧各自独立行号、不做对齐，便于通读全文 */
+/** 完整内容视图：完整上下文的对齐 diff —— 全部行可见，且改动行标红绿 */
 function renderFullContent(entry){
-  const aLines=entry.contentA==null?[]:entry.contentA.split('\n');
-  const bLines=entry.contentB==null?[]:entry.contentB.split('\n');
-  const n=Math.max(aLines.length,bLines.length);
-  const rows=[];
-  for(let i=0;i<n;i++){
-    const a=aLines[i], b=bLines[i];
-    const aCell=a===undefined?'<td class="l c empty"></td>':'<td class="l c">'+esc(a)+'</td>';
-    const bCell=b===undefined?'<td class="r c empty"></td>':'<td class="r c">'+esc(b)+'</td>';
-    rows.push('<tr>'+aCell
-      +'<td class="ln ln-a">'+(a===undefined?'':i+1)+'</td>'
-      +'<td class="ln ln-b">'+(b===undefined?'':i+1)+'</td>'
-      +bCell+'</tr>');
-  }
   let note='';
-  if(entry.truncatedA||entry.truncatedB){
-    const t=[];
-    if(entry.truncatedA) t.push(NAME_A+' 侧已截断');
-    if(entry.truncatedB) t.push(NAME_B+' 侧已截断');
-    note='<div class="trunc-note">正文超过单侧嵌入上限，'+t.join('；')+'，切到"仅看差异"可看完整差异。</div>';
+  if(entry.fullDiff.indexOf('已截断')>-1){
+    note='<div class="trunc-note">文件过大，完整内容视图已按行数上限截断，只显示前若干段。</div>';
   }
-  return note+'<table class="diff-table full"><thead><tr>'
-    +'<th>'+esc(NAME_A)+' (A)</th><th class="ln-h"></th><th class="ln-h"></th>'
-    +'<th>'+esc(NAME_B)+' (B)</th></tr></thead><tbody>'+rows.join('')+'</tbody></table>';
+  return note+renderDiffTable(entry.fullDiff,NAME_A,NAME_B);
 }
 function renderDiffTable(diffText,nameA,nameB){
   const rows=[];

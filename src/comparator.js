@@ -5,8 +5,8 @@ const { normalizeContent } = require('./normalizer');
 const DEFAULTS = {
   maxFileSize: 5 * 1024 * 1024, // 超过 5MB 只做哈希比较
   similarityThreshold: 0.8,
-  maxDiffLines: 200, // 每个文件内嵌 diff 的最大行数
-  maxContentBytes: 100 * 1024, // 弹窗"完整内容"视图每侧最多嵌入的字节数
+  maxDiffLines: 200, // 每个文件内嵌 diff 的最大行数（仅看差异视图）
+  maxFullDiffLines: 5000, // 完整对齐 diff 的最大行数（完整内容视图）
   lcsCellLimit: 2_000_000, // LCS DP 单元格上限，超过则退化为多集合近似
 };
 
@@ -28,8 +28,10 @@ function toText(buf) {
 /**
  * 基于 LCS 的统一 diff。返回 unified diff 文本（含 @@ hunk 头）。
  * 若规模超过 lcsCellLimit，退化为返回近似说明。
+ * @param {boolean} [fullContext] 为 true 时保留全部行（不裁剪上下文），
+ *                               用于"完整内容"视图 —— 对齐且改动行高亮
  */
-function unifiedDiff(textA, textB, labelA, labelB, maxLines) {
+function unifiedDiff(textA, textB, labelA, labelB, maxLines, fullContext) {
   const a = textA.split('\n');
   const b = textB.split('\n');
 
@@ -67,25 +69,43 @@ function unifiedDiff(textA, textB, labelA, labelB, maxLines) {
   while (i < n) ops.push({ t: '-', line: coreA[i++] });
   while (j < m) ops.push({ t: '+', line: coreB[j++] });
 
-  // 组装 hunks（前后各 3 行上下文）
+  // 把裁掉的公共前后缀补回，使 ops 与原文件行号一一对应。
+  // 否则 fullContext 视图会丢掉文件开头/结尾的未变更行，
+  // 紧凑视图也会缺掉紧邻变更的上下文
+  const prefixOps = a.slice(0, start).map((l) => ({ t: ' ', line: l }));
+  const suffixOps = a.slice(endA + 1).map((l) => ({ t: ' ', line: l }));
+  const allOps = prefixOps.concat(ops, suffixOps);
+
+  // 组装 hunks（默认前后各 3 行上下文；fullContext 时保留全部行）
   const ctx = 3;
-  const keep = new Array(ops.length).fill(false);
-  for (let k = 0; k < ops.length; k++) {
-    if (ops[k].t !== ' ') {
-      for (let c = Math.max(0, k - ctx); c <= Math.min(ops.length - 1, k + ctx); c++) keep[c] = true;
+  const keep = new Array(allOps.length).fill(fullContext === true);
+  if (!fullContext) {
+    for (let k = 0; k < allOps.length; k++) {
+      if (allOps[k].t !== ' ') {
+        for (let c = Math.max(0, k - ctx); c <= Math.min(allOps.length - 1, k + ctx); c++) keep[c] = true;
+      }
     }
   }
   const lines = [`--- ${labelA}`, `+++ ${labelB}`];
-  let k = 0;
-  while (k < ops.length) {
-    if (!keep[k]) { k++; continue; }
+  // 逐行走 allOps 维护 A/B 各自行号：前面 hunk 有增删时，两者会错开，
+  // 不能像原来那样对两个 hunk 都用同一个起始行
+  let aLine = 1, bLine = 1, k = 0;
+  while (k < allOps.length) {
+    if (!keep[k]) {
+      if (allOps[k].t !== '+') aLine++;
+      if (allOps[k].t !== '-') bLine++;
+      k++;
+      continue;
+    }
     const hunkStart = k;
-    while (k < ops.length && keep[k]) k++;
-    const slice = ops.slice(hunkStart, k);
-    const aCount = slice.filter((o) => o.t !== '+').length;
-    const bCount = slice.filter((o) => o.t !== '-').length;
-    lines.push(`@@ -${start + hunkStart + 1},${aCount} +${start + hunkStart + 1},${bCount} @@`);
-    for (const o of slice) lines.push(o.t + o.line);
+    const aStart = aLine, bStart = bLine;
+    while (k < allOps.length && keep[k]) {
+      if (allOps[k].t !== '+') aLine++;
+      if (allOps[k].t !== '-') bLine++;
+      k++;
+    }
+    lines.push(`@@ -${aStart},${aLine - aStart} +${bStart},${bLine - bStart} @@`);
+    for (const o of allOps.slice(hunkStart, k)) lines.push(o.t + o.line);
     if (lines.length >= maxLines * 2) {
       lines.push(`... (diff 已截断，共 ${maxLines} 行上限)`);
       break;
@@ -112,32 +132,17 @@ function multisetSimilarity(textA, textB) {
 }
 
 /**
- * 按字节截断文本（尽量在行边界截断，避免切断多字节字符/半行）
- * @returns {{text: string, truncated: boolean}}
- */
-function capText(text, maxBytes) {
-  const buf = Buffer.from(text, 'utf8');
-  if (buf.length <= maxBytes) return { text, truncated: false };
-  let cut = buf.slice(0, maxBytes).toString('utf8');
-  const nl = cut.lastIndexOf('\n');
-  if (nl > 0) cut = cut.slice(0, nl);
-  return { text: cut, truncated: true };
-}
-
-/**
  * 比较一对同路径（归一化后）的文件
- * @returns {{status: string, similarity: number|null, diff: string|null,
- *            linesA: number, linesB: number, sizeA: number, sizeB: number, binary: boolean,
- *            contentA: string|null, contentB: string|null,
- *            truncatedA: boolean, truncatedB: boolean}}
+ * @returns {{status: string, similarity: number|null,
+ *            diff: string|null, fullDiff: string|null,
+ *            linesA: number, linesB: number, sizeA: number, sizeB: number, binary: boolean}}
  */
 function comparePair(fullA, fullB, formsA, formsB, opts = {}) {
   const o = { ...DEFAULTS, ...opts };
   const fs = require('fs');
   const bufA = fs.readFileSync(fullA);
   const bufB = fs.readFileSync(fullB);
-  const base = { sizeA: bufA.length, sizeB: bufB.length, binary: false, diff: null, similarity: null,
-    contentA: null, contentB: null, truncatedA: false, truncatedB: false };
+  const base = { sizeA: bufA.length, sizeB: bufB.length, binary: false, diff: null, fullDiff: null, similarity: null };
 
   if (bufA.length > o.maxFileSize || bufB.length > o.maxFileSize) {
     const same = md5(bufA) === md5(bufB);
@@ -166,14 +171,14 @@ function comparePair(fullA, fullB, formsA, formsB, opts = {}) {
     ? multisetSimilarity(normA, normB)
     : lineSimilarity(normA, normB);
   const status = similarity >= o.similarityThreshold ? 'SIMILAR' : 'DIVERGED';
-  // SIMILAR 与 DIVERGED 都生成 diff（报告弹窗展示用），超大文件由 unifiedDiff 内部退化处理
+  // 紧凑 diff：只保留变更 hunk + 3 行上下文，用于"仅看差异"视图
   const diff = unifiedDiff(rawA, rawB, 'A', 'B', o.maxDiffLines);
-  // 弹窗默认展示完整内容，故同时嵌入两侧正文（按 maxContentBytes 截断）
-  const capA = capText(rawA, o.maxContentBytes);
-  const capB = capText(rawB, o.maxContentBytes);
-  return { ...base, status, similarity, diff, linesA, linesB,
-    contentA: capA.text, contentB: capB.text,
-    truncatedA: capA.truncated, truncatedB: capB.truncated };
+  // 完整对齐 diff：保留全部行，用于"完整内容"视图 —— 既能通读全文，又能高亮改动行。
+  // 它本身已含两侧全部内容，故不再单独嵌 contentA/contentB，避免重复膨胀。
+  // 超大文件 LCS 算不动，unifiedDiff 会返回说明文本，此处置 null 走降级展示
+  const fullRaw = unifiedDiff(rawA, rawB, 'A', 'B', o.maxFullDiffLines, true);
+  const fullDiff = fullRaw.startsWith('@@ 文件过大') ? null : fullRaw;
+  return { ...base, status, similarity, diff, fullDiff, linesA, linesB };
 }
 
 /** 归一化内容上的逐行相似度 = 1 - 变更行数 / 最大行数 */
