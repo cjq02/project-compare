@@ -48,6 +48,7 @@
   .name-cell .dot { flex-shrink: 0; }
   .name-cell .nm { overflow: hidden; text-overflow: ellipsis; }
   .name-cell .fcount { color: var(--muted); font-weight: 400; font-size: 11px; }
+  .name-cell .fcount .fcommon { color: #0969da; }
   td.side { font-family: Consolas, monospace; font-size: 12px; white-space: nowrap; }
   td.side .miss { color: #c0c4cc; }
   td.side .ok { color: var(--text); }
@@ -289,16 +290,17 @@ function buildTree(){
 }
 /** 目录聚合统计 */
 function agg(node){
-  const c={total:0,countA:0,countB:0};
+  const c={total:0,common:0,countA:0,countB:0};
   for(const k of ALL_STATUS) c[k]=0;
   for(const f of node.files){
     const s=f.entry.status; c.total++; c[s]++;
     if(f.entry.relA) c.countA++;
     if(f.entry.relB) c.countB++;
+    if(f.entry.relA&&f.entry.relB) c.common++;
   }
   for(const d of node.dirs.values()){
     const s=agg(d);
-    c.total+=s.total; c.countA+=s.countA; c.countB+=s.countB;
+    c.total+=s.total; c.common+=s.common; c.countA+=s.countA; c.countB+=s.countB;
     for(const k of ALL_STATUS) c[k]+=s[k];
   }
   node.agg=c;
@@ -368,7 +370,7 @@ function render(){
         '<td><div class="name-cell" style="padding-left:'+(depth*18)+'px">'+
           '<span class="chev'+(open?' open':'')+'">&#9654;</span>'+
           '<span class="dot s-'+st+'"></span><span class="nm">'+esc(d.name)+'</span>'+
-          '<span class="fcount">'+c.total+'</span>'
+          '<span class="fcount" title="总数 '+c.total+'（含单边独有）· 共有 '+c.common+'（两侧都存在，参与对比）">'+c.total+'<span class="fcommon">('+c.common+')</span></span>'
           +subactHtml(d)+'</div></td>'+
         '<td class="side"><span class="ok">'+c.countA+'</span></td>'+
         '<td class="side"><span class="ok">'+c.countB+'</span></td>'+
