@@ -24,8 +24,17 @@ function isBinaryBuffer(buf) {
   return false;
 }
 
+/**
+ * 解码为文本，并消除不承载代码语义的噪音：
+ *  - 去掉开头的 UTF-8 BOM
+ *  - CRLF -> LF
+ * 两侧都经这一关，因此"仅 BOM / 换行风格不同"会被正确判为内容相同。
+ * （源码里出现裸 \r 几乎必然是换行；字面量中的回车在源码里写作转义 \r）
+ */
 function toText(buf) {
-  return buf.toString('utf8');
+  let s = buf.toString('utf8');
+  if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+  return s.replace(/\r\n/g, '\n');
 }
 
 /**
@@ -140,14 +149,15 @@ function multisetSimilarity(textA, textB) {
  * 比较一对同路径（归一化后）的文件
  * @returns {{status: string, similarity: number|null,
  *            diff: string|null, fullDiff: string|null,
- *            linesA: number, linesB: number, sizeA: number, sizeB: number, binary: boolean}}
+ *            linesA: number, linesB: number, sizeA: number, sizeB: number,
+ *            binary: boolean, noiseOnly: boolean}}
  */
 function comparePair(fullA, fullB, formsA, formsB, opts = {}) {
   const o = { ...DEFAULTS, ...opts };
   const fs = require('fs');
   const bufA = fs.readFileSync(fullA);
   const bufB = fs.readFileSync(fullB);
-  const base = { sizeA: bufA.length, sizeB: bufB.length, binary: false, diff: null, fullDiff: null, similarity: null };
+  const base = { sizeA: bufA.length, sizeB: bufB.length, binary: false, noiseOnly: false, diff: null, fullDiff: null, similarity: null };
 
   if (bufA.length > o.maxFileSize || bufB.length > o.maxFileSize) {
     const same = md5(bufA) === md5(bufB);
@@ -161,7 +171,9 @@ function comparePair(fullA, fullB, formsA, formsB, opts = {}) {
 
   const rawA = toText(bufA), rawB = toText(bufB);
   if (md5(rawA) === md5(rawB)) {
-    return { ...base, status: 'IDENTICAL', linesA: rawA.split('\n').length, linesB: rawB.split('\n').length };
+    // 规范化后一致、原始字节却不同 —— 差异只在 BOM / 换行，记下来供报告说明
+    const noiseOnly = md5(bufA) !== md5(bufB);
+    return { ...base, status: 'IDENTICAL', noiseOnly, linesA: rawA.split('\n').length, linesB: rawB.split('\n').length };
   }
 
   const normA = normalizeContent(rawA, formsA);

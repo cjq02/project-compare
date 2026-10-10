@@ -85,6 +85,7 @@ function runCompare(opts, envFile, log) {
       sizeB: r.sizeB,
       linesA: r.linesA,
       linesB: r.linesB,
+      noiseOnly: r.noiseOnly === true,
       diff: r.diff,
       fullDiff: r.fullDiff,
     });

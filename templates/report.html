@@ -132,6 +132,7 @@
   .msg-box .big { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
   .msg-box .path { font-family: Consolas, monospace; font-size: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin: 10px 0; word-break: break-all; }
   /* ---------- 行提示 / IDE 对比 ---------- */
+  .noise { color: #8250df; font-size: 11px; }
   .pane-hint { font-size: 11.5px; color: var(--muted); }
   .ide-open { white-space: nowrap; border-color: #0969da; color: #0969da; font-weight: 600; }
   .ide-open:hover { background: #0969da; color: #fff; }
@@ -382,7 +383,8 @@ function render(){
       const aCell=e.relA?'<span class="ok" title="'+esc(e.relA)+'">'+kb(e.sizeA)+'</span>':'<span class="miss">—</span>';
       const bCell=e.relB?'<span class="ok" title="'+esc(e.relB)+'">'+kb(e.sizeB)+'</span>':'<span class="miss">—</span>';
       const clickable=(e.status==='SIMILAR'||e.status==='DIVERGED');
-      const sim=e.similarity!=null?pct(e.similarity):'-';
+      const sim=e.similarity!=null?pct(e.similarity)
+        :(e.noiseOnly?'<span class="noise" title="内容一致；原始字节不同，差异仅在 BOM / 换行风格">仅 BOM/换行</span>':'-');
       out.push(
         '<tr class="row" data-type="file" data-key="'+esc(e.key)+'">'+
         '<td><div class="name-cell" style="padding-left:'+(depth*18)+'px">'+
@@ -670,7 +672,14 @@ function renderModalView(){
     toggle.style.display='none';
   }
   if(s.status==='IDENTICAL'){
-    body.innerHTML='<div class="msg-box"><div class="big">字节级完全相同</div>该文件在两个项目中内容完全一致，可直接作为公共代码。</div>';
+    if(s.noiseOnly){
+      body.innerHTML='<div class="msg-box"><div class="big">内容完全相同</div>'
+        +'去掉 UTF-8 BOM 与换行风格（CRLF / LF）差异后，两边内容完全一致，可直接作为公共代码。'
+        +'<div class="path">原始字节并不相同：A '+kb(s.sizeA)+' / B '+kb(s.sizeB)+
+        '，差的就是 BOM 与换行符本身，不涉及代码。</div></div>';
+    }else{
+      body.innerHTML='<div class="msg-box"><div class="big">字节级完全相同</div>该文件在两个项目中内容完全一致，可直接作为公共代码。</div>';
+    }
   }else if(s.status==='SAME_BY_RENAME'){
     body.innerHTML='<div class="msg-box"><div class="big">仅项目名不同</div>将项目名（'+esc(NAME_A)+' / '+esc(NAME_B)+' 及其驼峰等形态）替换为占位符后，两边内容完全一致。<br>本质是公共代码，只是尚未参数化。</div>';
   }else if(s.status==='ONLY_A'||s.status==='ONLY_B'){

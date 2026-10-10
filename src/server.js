@@ -168,7 +168,7 @@ function liveDiff(key) {
   });
   return {
     ok: true, key,
-    status: r.status, similarity: r.similarity,
+    status: r.status, similarity: r.similarity, noiseOnly: r.noiseOnly === true,
     diff: r.diff, fullDiff: r.fullDiff,
     sizeA: r.sizeA, sizeB: r.sizeB, linesA: r.linesA, linesB: r.linesB,
     at: Date.now(),
