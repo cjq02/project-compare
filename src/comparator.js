@@ -7,7 +7,10 @@ const DEFAULTS = {
   similarityThreshold: 0.8,
   maxDiffLines: 200, // 每个文件内嵌 diff 的最大行数（仅看差异视图）
   maxFullDiffLines: 5000, // 完整对齐 diff 的最大行数（完整内容视图）
-  lcsCellLimit: 2_000_000, // LCS DP 单元格上限，超过则退化为多集合近似
+  // LCS DP 单元格上限。每格占 4 字节（Int32Array），2500 万格约 100MB 峰值内存。
+  // 200 万太保守：1500 行级别的文件（如 1537x1490=229 万格）就会被放弃。
+  // 2500 万可覆盖到约 5000x5000 行的文件对，当前对比集内最大仅 967 万格。
+  lcsCellLimit: 25_000_000,
 };
 
 function md5(text) {
@@ -27,11 +30,13 @@ function toText(buf) {
 
 /**
  * 基于 LCS 的统一 diff。返回 unified diff 文本（含 @@ hunk 头）。
- * 若规模超过 lcsCellLimit，退化为返回近似说明。
+ * 若规模超过 cellLimit，退化为返回近似说明。
  * @param {boolean} [fullContext] 为 true 时保留全部行（不裁剪上下文），
  *                               用于"完整内容"视图 —— 对齐且改动行高亮
+ * @param {number} [cellLimit] LCS 单元格上限，超过则放弃（默认 DEFAULTS.lcsCellLimit）
  */
-function unifiedDiff(textA, textB, labelA, labelB, maxLines, fullContext) {
+function unifiedDiff(textA, textB, labelA, labelB, maxLines, fullContext, cellLimit) {
+  const limit = cellLimit || DEFAULTS.lcsCellLimit;
   const a = textA.split('\n');
   const b = textB.split('\n');
 
@@ -44,7 +49,7 @@ function unifiedDiff(textA, textB, labelA, labelB, maxLines, fullContext) {
   const coreB = b.slice(start, endB + 1);
 
   let ops; // [{t:' '|'-'|'+', line}]
-  if ((coreA.length + 1) * (coreB.length + 1) > DEFAULTS.lcsCellLimit) {
+  if ((coreA.length + 1) * (coreB.length + 1) > limit) {
     return `@@ 文件过大，未生成逐行 diff（公共前缀 ${start} 行，A 共 ${a.length} 行，B 共 ${b.length} 行）`;
   }
 
@@ -166,30 +171,31 @@ function comparePair(fullA, fullB, formsA, formsB, opts = {}) {
   }
 
   const linesA = rawA.split('\n').length, linesB = rawB.split('\n').length;
-  const tooLarge = (linesA + 1) * (linesB + 1) > DEFAULTS.lcsCellLimit;
+  const tooLarge = (linesA + 1) * (linesB + 1) > o.lcsCellLimit;
   const similarity = tooLarge
     ? multisetSimilarity(normA, normB)
-    : lineSimilarity(normA, normB);
+    : lineSimilarity(normA, normB, o.lcsCellLimit);
   const status = similarity >= o.similarityThreshold ? 'SIMILAR' : 'DIVERGED';
   // 紧凑 diff：只保留变更 hunk + 3 行上下文，用于"仅看差异"视图
-  const diff = unifiedDiff(rawA, rawB, 'A', 'B', o.maxDiffLines);
+  const diff = unifiedDiff(rawA, rawB, 'A', 'B', o.maxDiffLines, false, o.lcsCellLimit);
   // 完整对齐 diff：保留全部行，用于"完整内容"视图 —— 既能通读全文，又能高亮改动行。
   // 它本身已含两侧全部内容，故不再单独嵌 contentA/contentB，避免重复膨胀。
   // 超大文件 LCS 算不动，unifiedDiff 会返回说明文本，此处置 null 走降级展示
-  const fullRaw = unifiedDiff(rawA, rawB, 'A', 'B', o.maxFullDiffLines, true);
+  const fullRaw = unifiedDiff(rawA, rawB, 'A', 'B', o.maxFullDiffLines, true, o.lcsCellLimit);
   const fullDiff = fullRaw.startsWith('@@ 文件过大') ? null : fullRaw;
   return { ...base, status, similarity, diff, fullDiff, linesA, linesB };
 }
 
 /** 归一化内容上的逐行相似度 = 1 - 变更行数 / 最大行数 */
-function lineSimilarity(normA, normB) {
+function lineSimilarity(normA, normB, cellLimit) {
+  const limit = cellLimit || DEFAULTS.lcsCellLimit;
   const a = normA.split('\n'), b = normB.split('\n');
   let start = 0;
   while (start < a.length && start < b.length && a[start] === b[start]) start++;
   let endA = a.length - 1, endB = b.length - 1;
   while (endA >= start && endB >= start && a[endA] === b[endB]) { endA--; endB--; }
   const coreA = a.slice(start, endA + 1), coreB = b.slice(start, endB + 1);
-  if ((coreA.length + 1) * (coreB.length + 1) > DEFAULTS.lcsCellLimit) {
+  if ((coreA.length + 1) * (coreB.length + 1) > limit) {
     return multisetSimilarity(normA, normB);
   }
   const n = coreA.length, m = coreB.length;
