@@ -22,10 +22,16 @@
   .toolbar { display: flex; align-items: center; gap: 14px; padding: 10px 20px; flex-wrap: wrap; flex-shrink: 0; }
   .toolbar input[type=text] { padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; width: 280px; }
   .toolbar select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; }
-  .toolbar .count { color: var(--muted); font-size: 12px; margin-left: auto; }
   .legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
   main { flex: 1; padding: 0 20px 14px; min-height: 0; display: flex; }
-  .pane { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: auto; min-width: 0; }
+  .pane { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; min-width: 0; display: flex; flex-direction: column; }
+  .pane-bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: #fafbfc; }
+  .pane-title { font-weight: 600; font-size: 13px; }
+  .pane-bar .count { color: var(--muted); font-size: 12px; }
+  .pane-actions { margin-left: auto; display: flex; gap: 6px; }
+  .tbtn { padding: 3px 12px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; color: var(--text); }
+  .tbtn:hover { background: var(--hover); }
+  .pane-scroll { overflow: auto; flex: 1; }
 
   table.tree-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.tree-table th { position: sticky; top: 0; background: #f0f2f5; z-index: 2; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; white-space: nowrap; }
@@ -113,8 +119,6 @@
     <option value="same">无差异（相同 + 仅改名）</option>
     <option value="only">仅单边独有</option>
   </select>
-  <button id="expandAll" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px">全部展开</button>
-  <button id="collapseAll" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px">全部折叠</button>
   <div class="legend">
     <span><span class="dot s-IDENTICAL"></span>完全相同</span>
     <span><span class="dot s-SAME_BY_RENAME"></span>仅项目名不同</span>
@@ -123,20 +127,29 @@
     <span><span class="dot s-ONLY_A"></span><span class="dot s-ONLY_B"></span>单边独有</span>
     <span><span class="dot s-MIXED"></span>混合</span>
   </div>
-  <div class="count" id="visCount"></div>
 </div>
 <main>
   <div class="pane">
-    <table class="tree-table">
-      <thead><tr>
-        <th style="min-width:340px">名称</th>
-        <th id="thA" style="min-width:130px">A</th>
-        <th id="thB" style="min-width:130px">B</th>
-        <th style="width:130px">状态</th>
-        <th style="min-width:220px">相似度 / 统计</th>
-      </tr></thead>
-      <tbody id="tbody"></tbody>
-    </table>
+    <div class="pane-bar">
+      <span class="pane-title">对比结果</span>
+      <span class="count" id="visCount"></span>
+      <span class="pane-actions">
+        <button class="tbtn" id="expandAll">全部展开</button>
+        <button class="tbtn" id="collapseAll">全部折叠</button>
+      </span>
+    </div>
+    <div class="pane-scroll">
+      <table class="tree-table">
+        <thead><tr>
+          <th style="min-width:340px">名称</th>
+          <th id="thA" style="min-width:130px">A</th>
+          <th id="thB" style="min-width:130px">B</th>
+          <th style="width:130px">状态</th>
+          <th style="min-width:220px">相似度 / 统计</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
   </div>
 </main>
 <div class="overlay" id="overlay">
