@@ -1,0 +1,12 @@
+{
+  "name": "project-compare",
+  "version": "1.0.0",
+  "private": true,
+  "description": "对比两个项目的公共代码（路径/内容归一化 + 相似度分级 + HTML 报告）",
+  "scripts": {
+    "compare": "node src/compare.js"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}
