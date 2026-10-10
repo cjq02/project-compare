@@ -72,7 +72,21 @@ function resolveOptions(env, cli) {
       ...splitList(env.EXCLUDE_FILES),
       ...cli.exclude.flatMap(splitList),
     ],
+    // 单击文件行时拉起的 IDE 对比工具：intellij | vscode | none
+    diffTool: normalizeDiffTool(cli.diffTool != null ? cli.diffTool : env.DIFF_TOOL),
+    // 两个 IDE 的可执行文件覆盖（留空 = 自动探测）
+    ideaExe: cli.ideaExe || env.IDEA_EXE || '',
+    vscodeExe: cli.vscodeExe || env.VSCODE_EXE || '',
   };
 }
 
-module.exports = { parseEnv, splitList, loadEnvFile, resolveOptions };
+/** DIFF_TOOL 归一化：别名并入正式名，未知值回落默认 intellij */
+function normalizeDiffTool(v) {
+  const t = String(v == null ? '' : v).trim().toLowerCase();
+  if (t === '' || t === 'idea' || t === 'intellij' || t === 'ij' || t === 'idea64') return 'intellij';
+  if (t === 'vscode' || t === 'code' || t === 'vs') return 'vscode';
+  if (t === 'none' || t === 'off' || t === 'false' || t === 'disabled') return 'none';
+  return 'intellij';
+}
+
+module.exports = { parseEnv, splitList, loadEnvFile, resolveOptions, normalizeDiffTool };

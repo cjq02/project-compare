@@ -11,16 +11,20 @@
  *   GET  /api/report    完整对比数据（report.json 内容）
  *   GET  /api/events    SSE：项目文件变更提示
  *   GET  /api/live-diff?key=  现读磁盘计算对比（弹窗用，非快照）
+ *   GET  /api/diff-tools      可用的 IDE 对比工具及默认值
  *   POST /api/refresh   重跑对比并生成报告
  *   POST /api/sync      单文件同步 { key, direction: 'A2B' | 'B2A' }
+ *   POST /api/open-diff 拉起 IDE diff 窗口 { key, tool? }
  */
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const cp = require('child_process');
 const { buildOptions } = require('./compare');
 const { runCompare } = require('./engine');
 const { comparePair } = require('./comparator');
 const { createNameForms } = require('./normalizer');
+const { normalizeDiffTool } = require('./config');
 
 const DEFAULT_PORT = 18899;
 const IGNORE_DIR_RE = /(^|\/)(node_modules|target|dist|\.git|\.idea|output)(\/|$)/;
@@ -29,6 +33,7 @@ const SYNCABLE = new Set(['SIMILAR', 'DIVERGED']);
 
 const { opts, envFile } = buildOptions({
   dirs: [], out: null, threshold: null, maxDiffLines: null, include: [], exclude: [], envFile: null,
+  diffTool: null, ideaExe: null, vscodeExe: null,
 });
 const port = Number(process.env.PORT) || Number(loadPortFromEnv()) || DEFAULT_PORT;
 const outDir = path.resolve(opts.out || './output');
@@ -170,6 +175,132 @@ function liveDiff(key) {
   };
 }
 
+/* ---------- IDE 对比：调用 IDE 自带的 diff 窗口 ---------- */
+const isWin = process.platform === 'win32';
+const _exeCache = new Map();
+
+/** 裸命令名是否能在 PATH 中找到（用于把"找不到工具"变成同步可返回的错误） */
+function isOnPath(name) {
+  const exts = isWin ? String(process.env.PATHEXT || '.EXE;.BAT;.CMD').split(';') : [''];
+  for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      try { if (fs.existsSync(path.join(dir, name + ext))) return true; } catch (_) { /* 忽略不可读目录 */ }
+    }
+    try { if (fs.existsSync(path.join(dir, name))) return true; } catch (_) { /* 同上 */ }
+  }
+  return false;
+}
+
+/**
+ * 探测 IDE 可执行文件。优先级：.env 显式配置 > 安装目录扫描 > PATH。
+ * 一律取 .exe / .sh —— 绕开 .bat/.cmd，spawn 时无需 shell，参数原样传递不涉及引号。
+ * @returns {string|null} 找不到返回 null
+ */
+function detectExe(tool) {
+  const explicit = tool === 'intellij' ? opts.ideaExe : opts.vscodeExe;
+  const cands = [];
+  if (explicit) cands.push(explicit);
+
+  if (tool === 'intellij') {
+    for (const h of [process.env.INTELLIJ_HOME, process.env.IDEA_HOME].filter(Boolean)) {
+      cands.push(path.join(h, 'bin', isWin ? 'idea64.exe' : 'idea.sh'));
+    }
+    const roots = isWin
+      ? [path.join(process.env.ProgramFiles || 'C:\\Program Files', 'JetBrains'),
+         path.join(process.env.LOCALAPPDATA || '', 'JetBrains')]
+      : ['/opt', '/usr/local', '/Applications'];
+    for (const r of roots) {
+      if (!r || !fs.existsSync(r)) continue;
+      let entries = [];
+      try { entries = fs.readdirSync(r); } catch (_) { continue; }
+      // 同一目录下多版本并存时取字典序最大的（如 2026 > 2024）
+      for (const n of entries.filter((x) => /^intellij|^idea/i.test(x)).sort().reverse()) {
+        cands.push(path.join(r, n, 'bin', isWin ? 'idea64.exe' : 'idea.sh'));
+      }
+    }
+    cands.push(isWin ? 'idea64.exe' : 'idea.sh');
+  } else {
+    const roots = [
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Microsoft VS Code'),
+      path.join(process.env.ProgramFiles || '', 'Microsoft VS Code'),
+      path.join(process.env['ProgramFiles(x86)'] || '', 'Microsoft VS Code'),
+      '/usr/share/code', '/snap/bin',
+      '/Applications/Visual Studio Code.app/Contents/Resources/app/bin',
+    ].filter((r) => r && fs.existsSync(r));
+    for (const r of roots) cands.push(isWin ? path.join(r, 'Code.exe') : path.join(r, 'code'));
+    cands.push(isWin ? 'Code.exe' : 'code');
+  }
+
+  for (const c of cands) {
+    if (!c) continue;
+    if (path.isAbsolute(c) || /[\\/]/.test(c)) {
+      try { if (fs.existsSync(c)) return c; } catch (_) { /* 忽略 */ }
+    } else if (isOnPath(c)) {
+      return c; // 裸命令名，交给 CreateProcess 按 PATH 解析
+    }
+  }
+  return null;
+}
+
+function exeFor(tool) {
+  if (!_exeCache.has(tool)) _exeCache.set(tool, detectExe(tool));
+  return _exeCache.get(tool);
+}
+
+const TOOL_LABEL = { intellij: 'IntelliJ IDEA', vscode: 'VSCode' };
+
+/** 可用工具清单，供前端右键菜单展示 */
+function listTools() {
+  const out = {};
+  for (const t of ['intellij', 'vscode']) {
+    const exe = exeFor(t);
+    out[t] = { available: !!exe, exe: exe || null, label: TOOL_LABEL[t] };
+  }
+  return { default: opts.diffTool, tools: out };
+}
+
+/**
+ * 拉起 IDE 自带的 diff 窗口。
+ * detached + stdio:ignore + unref：IDEA 冷启动十几秒，不能阻塞 HTTP 响应，
+ * 也不能让它退出前一直挂住请求；进程独立于服务存活。
+ */
+function openDiff(body) {
+  const key = String((body && body.key) || '');
+  const d = ensureReport();
+  const entry = (d.files || []).find((f) => f.key === key);
+  if (!entry) return { ok: false, error: '未找到该文件: ' + key };
+  if (!entry.relA || !entry.relB) return { ok: false, error: '该文件缺少一侧，无法对比' };
+
+  const tool = normalizeDiffTool(body.tool || opts.diffTool);
+  if (tool === 'none') return { ok: false, error: '未配置对比工具（DIFF_TOOL=none）' };
+
+  // 路径只从报告数据推导，客户端传不进任意路径
+  const fA = safePath(d.meta.dirA, entry.relA);
+  const fB = safePath(d.meta.dirB, entry.relB);
+  if (!fA || !fB) return { ok: false, error: '路径越界，已拒绝' };
+  if (!fs.existsSync(fA)) return { ok: false, error: 'A 侧文件不存在: ' + entry.relA };
+  if (!fs.existsSync(fB)) return { ok: false, error: 'B 侧文件不存在: ' + entry.relB };
+
+  const exe = exeFor(tool);
+  if (!exe) {
+    return { ok: false, error: '未找到 ' + TOOL_LABEL[tool] + '，请在 .env 配置 '
+      + (tool === 'intellij' ? 'IDEA_EXE' : 'VSCODE_EXE') };
+  }
+  const args = tool === 'intellij' ? ['diff', fA, fB] : ['--diff', fA, fB];
+  // IDEA 旧版要求 cwd 为 bin 目录；路径都是绝对的，切过去无副作用
+  const cwd = path.dirname(exe);
+  try {
+    const child = cp.spawn(exe, args, { cwd, detached: true, stdio: 'ignore', windowsHide: false });
+    child.on('error', (e) => log('拉起失败:', TOOL_LABEL[tool], e.message));
+    child.unref();
+  } catch (e) {
+    return { ok: false, error: '拉起失败: ' + e.message };
+  }
+  log(`打开 ${TOOL_LABEL[tool]} 对比: ${entry.relA} <-> ${entry.relB}`);
+  return { ok: true, tool, label: TOOL_LABEL[tool], exe, args };
+}
+
 /* ---------- HTTP ---------- */
 function sendJson(res, code, obj) {
   const body = JSON.stringify(obj);
@@ -293,6 +424,15 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/sync') {
       const body = await readBody(req);
       return sendJson(res, 200, handleSync(body));
+    }
+
+    if (req.method === 'GET' && p === '/api/diff-tools') {
+      return sendJson(res, 200, Object.assign({ ok: true }, listTools()));
+    }
+
+    if (req.method === 'POST' && p === '/api/open-diff') {
+      const body = await readBody(req);
+      return sendJson(res, 200, openDiff(body));
     }
 
     sendJson(res, 404, { ok: false, error: 'not found' });

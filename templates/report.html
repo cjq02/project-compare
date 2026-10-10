@@ -131,6 +131,40 @@
   .msg-box { margin: 30px auto; max-width: 560px; text-align: center; color: var(--muted); font-size: 14px; }
   .msg-box .big { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
   .msg-box .path { font-family: Consolas, monospace; font-size: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin: 10px 0; word-break: break-all; }
+  /* ---------- 行提示 / IDE 对比 ---------- */
+  .pane-hint { font-size: 11.5px; color: var(--muted); }
+  .ide-open { white-space: nowrap; border-color: #0969da; color: #0969da; font-weight: 600; }
+  .ide-open:hover { background: #0969da; color: #fff; }
+  tr[data-type="file"] { cursor: pointer; }
+
+  /* ---------- 右键菜单 ---------- */
+  .ctxmenu {
+    position: fixed; z-index: 90; min-width: 210px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; padding: 4px;
+    box-shadow: 0 8px 24px rgba(140, 149, 159, .28);
+  }
+  .ctxmenu .ci {
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+    border-radius: 5px; font-size: 12.5px; cursor: pointer; color: var(--text);
+    white-space: nowrap;
+  }
+  .ctxmenu .ci:hover { background: var(--hover); }
+  .ctxmenu .ci.off { opacity: .4; cursor: not-allowed; }
+  .ctxmenu .ci.off:hover { background: transparent; }
+  .ctxmenu .ci .k { margin-left: auto; color: var(--muted); font-size: 11px; }
+  .ctxmenu .ci.primary { font-weight: 600; color: #0969da; }
+  .ctxmenu .sep { height: 1px; background: var(--border); margin: 4px 6px; }
+  .ctxmenu .head { padding: 5px 10px 3px; font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+
+  /* ---------- toast ---------- */
+  .toast {
+    position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%);
+    z-index: 120; padding: 9px 18px; border-radius: 8px; font-size: 13px;
+    background: #1f2328; color: #fff; box-shadow: 0 8px 24px rgba(0, 0, 0, .3);
+    max-width: 74vw; word-break: break-all;
+  }
+  .toast.ok { background: #1a7f37; }
+  .toast.err { background: #cf222e; }
 </style>
 </head>
 <body>
@@ -162,6 +196,7 @@
     <div class="pane-bar">
       <span class="pane-title">对比结果</span>
       <span class="count" id="visCount"></span>
+      <span class="pane-hint" id="paneHint">单击文件行 → 打开 IDE 对比 · 右键 → 详情与同步</span>
       <span class="pane-actions">
         <button class="tbtn" id="expandAll">全部展开</button>
         <button class="tbtn" id="collapseAll">全部折叠</button>
@@ -187,6 +222,7 @@
       <button class="close" id="closeBtn">&times;</button>
       <div class="title" id="modalTitle"></div>
       <div class="info" id="modalInfo"></div>
+      <button class="tbtn ide-open" id="ideOpen" style="display:none" title="用 IDE 自带的对比窗口打开这两个文件">在 IDE 中对比</button>
       <div class="view-toggle" id="viewToggle" style="display:none"></div>
       <div class="sync-bar" id="syncBar" style="display:none">
         <span class="sync-label">同步此文件</span>
@@ -214,6 +250,8 @@
   <button class="sbtn" id="liveRefresh">重新对比并刷新</button>
   <button class="sbtn ghost" id="liveClose">忽略</button>
 </div>
+<div class="ctxmenu" id="ctxmenu" style="display:none"></div>
+<div class="toast" id="toast" style="display:none"></div>
 <script>
 const DATA = /*__DATA__*/null;
 const NAME_A = DATA.meta.projectA, NAME_B = DATA.meta.projectB;
@@ -363,6 +401,62 @@ function render(){
 }
 
 /* ---------- 交互 ---------- */
+/* IDE 工具清单由服务端探测后注入；file:// 直接打开时取不到，保持 default='none' 走弹窗 */
+let DIFF_TOOLS={ default:'none', tools:{} };
+let _toastTimer=null;
+function toast(msg, kind){
+  const el=document.getElementById('toast');
+  el.textContent=msg;
+  el.className='toast'+(kind?' '+kind:'');
+  el.style.display='';
+  clearTimeout(_toastTimer);
+  _toastTimer=setTimeout(()=>{ el.style.display='none'; }, kind==='err'?5200:2600);
+}
+
+function canIdeDiff(e){
+  if(!e||!e.relA||!e.relB) return false;
+  const t=DIFF_TOOLS.default;
+  return t!=='none' && !!(DIFF_TOOLS.tools[t]&&DIFF_TOOLS.tools[t].available);
+}
+
+/** 调用服务端拉起 IDE 的 diff 窗口 */
+async function openIdeDiff(e, tool){
+  tool=tool||DIFF_TOOLS.default;
+  try{
+    const res=await fetch('/api/open-diff',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({key:e.key, tool}),
+    });
+    const o=await res.json();
+    if(!o.ok){ toast(o.error||'打开失败','err'); return false; }
+    toast('已在 '+o.label+' 中打开对比','ok');
+    return true;
+  }catch(err){ toast('服务不可用：'+err.message,'err'); return false; }
+}
+
+async function copyText(t){
+  try{
+    if(navigator.clipboard&&window.isSecureContext){ await navigator.clipboard.writeText(t); }
+    else{
+      const ta=document.createElement('textarea');
+      ta.value=t; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    }
+    toast('已复制: '+t,'ok');
+  }catch(err){ toast('复制失败: '+err.message,'err'); }
+}
+
+function updateIdeHint(){
+  const el=document.getElementById('paneHint');
+  const t=DIFF_TOOLS.default;
+  const info=t==='none'?null:DIFF_TOOLS.tools[t];
+  if(!info||!info.available) el.textContent='单击文件行 → 打开详情弹窗';
+  else el.textContent='单击文件行 → 在 '+info.label+' 中对比 · 右键 → 详情与同步';
+}
+fetch('/api/diff-tools').then(r=>r.json()).then(o=>{
+  if(o&&o.ok){ DIFF_TOOLS={ default:o.default||'none', tools:o.tools||{} }; updateIdeHint(); }
+}).catch(()=>{ /* file:// 或服务未启动：维持 none */ });
+
 document.getElementById('tbody').addEventListener('click',(ev)=>{
   // 子树局部展开/折叠：必须先于"整行切换"判断（按钮位于目录行内部）
   const exp=ev.target.closest('[data-exp]');
@@ -377,13 +471,75 @@ document.getElementById('tbody').addEventListener('click',(ev)=>{
     render();
     return;
   }
-  // 文件行：点击任意位置打开弹窗
+  // 文件行：单击任意位置拉起 IDE 自带的对比窗口
   const row=ev.target.closest('tr[data-type="file"]');
   if(row){
     const e=DATA.files.find(f=>f.key===row.getAttribute('data-key'));
-    if(e) openModal(e);
+    if(!e) return;
+    if(canIdeDiff(e)) openIdeDiff(e, DIFF_TOOLS.default);
+    else openModal(e);   // 单边独有 / 未配置工具时仍走详情弹窗
   }
 });
+
+/* ---------- 右键菜单：详情、双工具对比、复制路径 ---------- */
+let ctxEntry=null;
+function hideCtx(){ document.getElementById('ctxmenu').style.display='none'; }
+
+document.getElementById('tbody').addEventListener('contextmenu',(ev)=>{
+  const row=ev.target.closest('tr[data-type="file"]');
+  if(!row){ hideCtx(); return; }
+  const e=DATA.files.find(f=>f.key===row.getAttribute('data-key'));
+  if(!e){ hideCtx(); return; }
+  ev.preventDefault();
+  ctxEntry=e;
+  showCtx(e, ev.clientX, ev.clientY);
+});
+
+function showCtx(e, x, y){
+  const m=document.getElementById('ctxmenu');
+  const both=!!e.relA&&!!e.relB;
+  const html=['<div class="head">'+esc(e.key)+'</div>'];
+  html.push('<div class="ci" data-act="modal">打开详情与同步</div>');
+  html.push('<div class="sep"></div>');
+  for(const t of ['intellij','vscode']){
+    const info=DIFF_TOOLS.tools[t];
+    if(!info) continue;
+    const off=(!both||!info.available);
+    html.push('<div class="ci'+(off?' off':'')+'" data-act="ide" data-tool="'+t+'">'
+      +(off?'&#9633; ':'&#9654; ')+esc(info.label)+' 对比'
+      +(off&&!both?' <span class="k">缺一侧</span>':off?' <span class="k">未探测到</span>':'')+'</div>');
+  }
+  if(both){ html.push('<div class="sep"></div>'); }
+  html.push('<div class="ci'+(e.relA?'':' off')+'" data-act="copyA">复制 A 路径</div>');
+  html.push('<div class="ci'+(e.relB?'':' off')+'" data-act="copyB">复制 B 路径</div>');
+  m.innerHTML=html.join('');
+  m.style.display='';
+  const r=m.getBoundingClientRect();
+  m.style.left=Math.max(4, Math.min(x, window.innerWidth-r.width-8))+'px';
+  m.style.top=Math.max(4, Math.min(y, window.innerHeight-r.height-8))+'px';
+}
+
+document.getElementById('ctxmenu').addEventListener('click',(ev)=>{
+  const it=ev.target.closest('[data-act]');
+  if(!it||it.classList.contains('off')) return;
+  const act=it.getAttribute('data-act');
+  const e=ctxEntry;
+  hideCtx();
+  if(!e) return;
+  if(act==='modal') openModal(e);
+  else if(act==='ide') openIdeDiff(e, it.getAttribute('data-tool'));
+  else if(act==='copyA') copyText(pathOf(e,'A'));
+  else if(act==='copyB') copyText(pathOf(e,'B'));
+});
+document.addEventListener('click',(ev)=>{ if(!ev.target.closest('#ctxmenu')) hideCtx(); });
+document.addEventListener('keydown',(ev)=>{ if(ev.key==='Escape') hideCtx(); });
+window.addEventListener('scroll',hideCtx,true);
+
+function pathOf(e, side){
+  const rel=side==='A'?e.relA:e.relB;
+  const dir=side==='A'?DATA.meta.dirA:DATA.meta.dirB;
+  return rel?dir.replace(/\\/g,'/')+'/'+rel:'';
+}
 document.getElementById('expandAll').addEventListener('click',()=>{
   (function walk(n){for(const d of n.dirs.values()){state.expanded.add(d.path);walk(d);}})(root);
   render();
@@ -455,6 +611,7 @@ function openModal(entry){
   modalLive=null;      // 先用快照即时渲染，实时数据到了再覆盖，避免空白等待
   modalView='full';   // 默认展示完整内容
   document.getElementById('modalTitle').textContent=entry.key;
+  document.getElementById('ideOpen').style.display=canIdeDiff(entry)?'':'none';
   renderModalInfo();
   renderModalView();
   renderSyncBar();
@@ -568,6 +725,7 @@ function renderDiffTable(diffText,nameA,nameB){
     +'</tr></thead><tbody>'+rows.join('')+'</tbody></table>';
 }
 document.getElementById('closeBtn').addEventListener('click',()=>document.getElementById('overlay').classList.remove('open'));
+document.getElementById('ideOpen').addEventListener('click',()=>{ if(modalEntry) openIdeDiff(modalEntry); });
 document.getElementById('viewToggle').addEventListener('click',(ev)=>{
   const b=ev.target.closest('.vbtn');
   if(!b) return;

@@ -16,6 +16,9 @@ const HELP = `用法: node src/compare.js [项目A目录 项目B目录] [选项]
       --include <pattern>    白名单规则（可多次使用，与 .env 合并；非空则只对比命中文件）
       --exclude <pattern>    黑名单规则（可多次使用，与 .env 合并）
       --max-diff-lines <n>   每个文件内嵌 diff 最大行数（默认 300）
+      --diff-tool <tool>     单击文件行拉起的 IDE：intellij | vscode | none（默认 intellij）
+      --idea-exe <path>      IntelliJ 可执行文件路径（默认自动探测）
+      --vscode-exe <path>    VSCode 可执行文件路径（默认自动探测）
   -h, --help                 显示帮助
 
 .env 支持的键:
@@ -24,6 +27,9 @@ const HELP = `用法: node src/compare.js [项目A目录 项目B目录] [选项]
   PORT                    server.js 监听端口（默认 18899）
   THRESHOLD               相似度阈值
   MAX_DIFF_LINES          diff 最大行数
+  DIFF_TOOL               单击文件行拉起的 IDE：intellij | vscode | none
+  IDEA_EXE                IntelliJ 可执行文件路径（留空自动探测）
+  VSCODE_EXE              VSCode 可执行文件路径（留空自动探测）
   INCLUDE_DIRS            白名单，逗号分隔（非空则只对比命中范围，推荐用于只看框架层）
   INCLUDE_FILES           白名单，逗号分隔（与上合并）
   EXCLUDE_DIRS            黑名单，逗号分隔（命中目录则排除其下全部）
@@ -41,11 +47,12 @@ const HELP = `用法: node src/compare.js [项目A目录 项目B目录] [选项]
 示例:
   node src/compare.js                              # 全部参数取自 .env
   node src/compare.js A B --include "{PROJECT}-vue/src/utils/**"
-  node src/server.js                               # 起服务：实时提示 + 弹窗内同步
+  node src/server.js                               # 起服务：实时提示 + 单击行拉起 IDE 对比
 `;
 
 function parseArgs(argv) {
-  const cli = { dirs: [], out: null, threshold: null, maxDiffLines: null, include: [], exclude: [], envFile: null };
+  const cli = { dirs: [], out: null, threshold: null, maxDiffLines: null, include: [], exclude: [], envFile: null,
+    diffTool: null, ideaExe: null, vscodeExe: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '-h' || a === '--help') { console.log(HELP); process.exit(0); }
@@ -55,6 +62,9 @@ function parseArgs(argv) {
     else if (a === '--include') cli.include.push(argv[++i]);
     else if (a === '--exclude') cli.exclude.push(argv[++i]);
     else if (a === '--max-diff-lines') cli.maxDiffLines = parseInt(argv[++i], 10);
+    else if (a === '--diff-tool') cli.diffTool = argv[++i];
+    else if (a === '--idea-exe') cli.ideaExe = argv[++i];
+    else if (a === '--vscode-exe') cli.vscodeExe = argv[++i];
     else if (a.startsWith('-')) { console.error(`未知参数: ${a}\n${HELP}`); process.exit(1); }
     else cli.dirs.push(path.resolve(a));
   }
