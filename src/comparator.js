@@ -6,6 +6,7 @@ const DEFAULTS = {
   maxFileSize: 5 * 1024 * 1024, // 超过 5MB 只做哈希比较
   similarityThreshold: 0.8,
   maxDiffLines: 200, // 每个文件内嵌 diff 的最大行数
+  maxContentBytes: 100 * 1024, // 弹窗"完整内容"视图每侧最多嵌入的字节数
   lcsCellLimit: 2_000_000, // LCS DP 单元格上限，超过则退化为多集合近似
 };
 
@@ -111,16 +112,32 @@ function multisetSimilarity(textA, textB) {
 }
 
 /**
+ * 按字节截断文本（尽量在行边界截断，避免切断多字节字符/半行）
+ * @returns {{text: string, truncated: boolean}}
+ */
+function capText(text, maxBytes) {
+  const buf = Buffer.from(text, 'utf8');
+  if (buf.length <= maxBytes) return { text, truncated: false };
+  let cut = buf.slice(0, maxBytes).toString('utf8');
+  const nl = cut.lastIndexOf('\n');
+  if (nl > 0) cut = cut.slice(0, nl);
+  return { text: cut, truncated: true };
+}
+
+/**
  * 比较一对同路径（归一化后）的文件
  * @returns {{status: string, similarity: number|null, diff: string|null,
- *            linesA: number, linesB: number, sizeA: number, sizeB: number, binary: boolean}}
+ *            linesA: number, linesB: number, sizeA: number, sizeB: number, binary: boolean,
+ *            contentA: string|null, contentB: string|null,
+ *            truncatedA: boolean, truncatedB: boolean}}
  */
 function comparePair(fullA, fullB, formsA, formsB, opts = {}) {
   const o = { ...DEFAULTS, ...opts };
   const fs = require('fs');
   const bufA = fs.readFileSync(fullA);
   const bufB = fs.readFileSync(fullB);
-  const base = { sizeA: bufA.length, sizeB: bufB.length, binary: false, diff: null, similarity: null };
+  const base = { sizeA: bufA.length, sizeB: bufB.length, binary: false, diff: null, similarity: null,
+    contentA: null, contentB: null, truncatedA: false, truncatedB: false };
 
   if (bufA.length > o.maxFileSize || bufB.length > o.maxFileSize) {
     const same = md5(bufA) === md5(bufB);
@@ -151,7 +168,12 @@ function comparePair(fullA, fullB, formsA, formsB, opts = {}) {
   const status = similarity >= o.similarityThreshold ? 'SIMILAR' : 'DIVERGED';
   // SIMILAR 与 DIVERGED 都生成 diff（报告弹窗展示用），超大文件由 unifiedDiff 内部退化处理
   const diff = unifiedDiff(rawA, rawB, 'A', 'B', o.maxDiffLines);
-  return { ...base, status, similarity, diff, linesA, linesB };
+  // 弹窗默认展示完整内容，故同时嵌入两侧正文（按 maxContentBytes 截断）
+  const capA = capText(rawA, o.maxContentBytes);
+  const capB = capText(rawB, o.maxContentBytes);
+  return { ...base, status, similarity, diff, linesA, linesB,
+    contentA: capA.text, contentB: capB.text,
+    truncatedA: capA.truncated, truncatedB: capB.truncated };
 }
 
 /** 归一化内容上的逐行相似度 = 1 - 变更行数 / 最大行数 */

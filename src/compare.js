@@ -142,6 +142,10 @@ function main() {
       linesA: r.linesA,
       linesB: r.linesB,
       diff: r.diff,
+      contentA: r.contentA,
+      contentB: r.contentB,
+      truncatedA: r.truncatedA,
+      truncatedB: r.truncatedB,
     });
     if (++done % 200 === 0) console.log(`  已比较 ${done}/${commonKeys.length}`);
   }

@@ -73,6 +73,13 @@
   .modal-head .title { font-weight: 700; font-size: 15px; font-family: Consolas, monospace; }
   .modal-head .info { margin-top: 6px; display: flex; gap: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; align-items: center; }
   .modal-head .close { position: absolute; top: 8px; right: 12px; border: 0; background: none; font-size: 24px; cursor: pointer; color: var(--muted); line-height: 1; }
+  .view-toggle { margin-top: 8px; display: flex; gap: 6px; }
+  .vbtn { padding: 3px 12px; border: 1px solid var(--border); background: #fff; border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--text); }
+  .vbtn:hover { background: var(--hover); }
+  .vbtn.on { background: #0969da; color: #fff; border-color: #0969da; }
+  .vbtn.on:hover { background: #0969da; }
+  .trunc-note { padding: 8px 12px; background: #fff8c5; color: #9a6700; font-size: 12px; border-bottom: 1px solid var(--border); }
+  .diff-table.full td.l, .diff-table.full td.r { background: #fff; }
   .modal-body { flex: 1; overflow: auto; }
   .diff-table { border-collapse: collapse; width: 100%; font-family: Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.55; }
   .diff-table th { position: sticky; top: 0; background: #f0f2f5; z-index: 2; padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12px; }
@@ -138,6 +145,7 @@
       <button class="close" id="closeBtn">&times;</button>
       <div class="title" id="modalTitle"></div>
       <div class="info" id="modalInfo"></div>
+      <div class="view-toggle" id="viewToggle" style="display:none"></div>
     </div>
     <div class="modal-body" id="modalBody"></div>
   </div>
@@ -326,7 +334,10 @@ document.getElementById('search').addEventListener('input',(e)=>{
 document.getElementById('filter').addEventListener('change',(e)=>{ state.filter=e.target.value; render(); });
 
 /* ---------- 弹窗 ---------- */
+let modalEntry=null, modalView='full';
 function openModal(entry){
+  modalEntry=entry;
+  modalView='full';   // 默认展示完整内容
   document.getElementById('modalTitle').textContent=entry.key;
   const info=['<span class="tag t-'+entry.status+' disabled" style="cursor:default">'+STATUS_TEXT[entry.status]+'</span>'];
   if(entry.similarity!=null) info.push('相似度: <b>'+pct(entry.similarity)+'</b>');
@@ -335,8 +346,27 @@ function openModal(entry){
   if(entry.relA) info.push('A: '+esc(entry.relA));
   if(entry.relB) info.push('B: '+esc(entry.relB));
   document.getElementById('modalInfo').innerHTML=info.join('<span style="color:#d0d7de">|</span>');
+  renderModalView();
+  document.getElementById('overlay').classList.add('open');
+}
 
+/** 按当前视图模式渲染弹窗主体（完整内容 / 仅看差异） */
+function renderModalView(){
+  const entry=modalEntry;
   const body=document.getElementById('modalBody');
+  const toggle=document.getElementById('viewToggle');
+  if(!entry){ body.innerHTML=''; toggle.style.display='none'; return; }
+  const canFull=entry.contentA!=null||entry.contentB!=null;
+  const canDiff=!!entry.diff;
+  // 只有既有正文又有 diff 的才提供切换
+  if(canFull&&canDiff){
+    toggle.innerHTML='<button class="vbtn'+(modalView==='full'?' on':'')+'" data-v="full">完整内容</button>'
+      +'<button class="vbtn'+(modalView==='diff'?' on':'')+'" data-v="diff">仅看差异</button>';
+    toggle.style.display='';
+  }else{
+    toggle.innerHTML='';
+    toggle.style.display='none';
+  }
   if(entry.status==='IDENTICAL'){
     body.innerHTML='<div class="msg-box"><div class="big">字节级完全相同</div>该文件在两个项目中内容完全一致，可直接作为公共代码。</div>';
   }else if(entry.status==='SAME_BY_RENAME'){
@@ -345,12 +375,40 @@ function openModal(entry){
     const p=entry.status==='ONLY_A'?entry.relA:entry.relB;
     const proj=entry.status==='ONLY_A'?NAME_A:NAME_B;
     body.innerHTML='<div class="msg-box"><div class="big">仅存在于 '+esc(proj)+'</div>该文件在另一个项目中没有同路径对应文件（业务代码），不做差异对比。<div class="path">'+esc(p)+'</div></div>';
-  }else if(entry.diff){
+  }else if(modalView==='full'&&canFull){
+    body.innerHTML=renderFullContent(entry);
+  }else if(canDiff){
     body.innerHTML=renderDiffTable(entry.diff,NAME_A,NAME_B);
   }else{
-    body.innerHTML='<div class="msg-box"><div class="big">无 diff 数据</div>文件过大，未生成逐行对比。</div>';
+    body.innerHTML='<div class="msg-box"><div class="big">无对比数据</div>文件过大，未生成逐行对比。</div>';
   }
-  document.getElementById('overlay').classList.add('open');
+}
+
+/** 完整内容视图：两侧各自独立行号、不做对齐，便于通读全文 */
+function renderFullContent(entry){
+  const aLines=entry.contentA==null?[]:entry.contentA.split('\n');
+  const bLines=entry.contentB==null?[]:entry.contentB.split('\n');
+  const n=Math.max(aLines.length,bLines.length);
+  const rows=[];
+  for(let i=0;i<n;i++){
+    const a=aLines[i], b=bLines[i];
+    const aCell=a===undefined?'<td class="l c empty"></td>':'<td class="l c">'+esc(a)+'</td>';
+    const bCell=b===undefined?'<td class="r c empty"></td>':'<td class="r c">'+esc(b)+'</td>';
+    rows.push('<tr>'+aCell
+      +'<td class="ln ln-a">'+(a===undefined?'':i+1)+'</td>'
+      +'<td class="ln ln-b">'+(b===undefined?'':i+1)+'</td>'
+      +bCell+'</tr>');
+  }
+  let note='';
+  if(entry.truncatedA||entry.truncatedB){
+    const t=[];
+    if(entry.truncatedA) t.push(NAME_A+' 侧已截断');
+    if(entry.truncatedB) t.push(NAME_B+' 侧已截断');
+    note='<div class="trunc-note">正文超过单侧嵌入上限，'+t.join('；')+'，切到"仅看差异"可看完整差异。</div>';
+  }
+  return note+'<table class="diff-table full"><thead><tr>'
+    +'<th>'+esc(NAME_A)+' (A)</th><th class="ln-h"></th><th class="ln-h"></th>'
+    +'<th>'+esc(NAME_B)+' (B)</th></tr></thead><tbody>'+rows.join('')+'</tbody></table>';
 }
 function renderDiffTable(diffText,nameA,nameB){
   const rows=[];
@@ -383,6 +441,12 @@ function renderDiffTable(diffText,nameA,nameB){
     +'</tr></thead><tbody>'+rows.join('')+'</tbody></table>';
 }
 document.getElementById('closeBtn').addEventListener('click',()=>document.getElementById('overlay').classList.remove('open'));
+document.getElementById('viewToggle').addEventListener('click',(ev)=>{
+  const b=ev.target.closest('.vbtn');
+  if(!b) return;
+  modalView=b.getAttribute('data-v');
+  renderModalView();
+});
 document.getElementById('overlay').addEventListener('click',(e)=>{ if(e.target===e.currentTarget) e.currentTarget.classList.remove('open'); });
 document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') document.getElementById('overlay').classList.remove('open'); });
 
