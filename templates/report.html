@@ -446,31 +446,63 @@ document.getElementById('search').addEventListener('input',(e)=>{
 document.getElementById('filter').addEventListener('change',(e)=>{ state.filter=e.target.value; render(); });
 
 /* ---------- 弹窗 ---------- */
-let modalEntry=null, modalView='full';
+let modalEntry=null, modalView='full', modalLive=null;
+/** 当前弹窗应使用的数据：优先实时取回的，否则用报告快照 */
+function modalSrc(){ return modalLive||modalEntry; }
+
 function openModal(entry){
   modalEntry=entry;
+  modalLive=null;      // 先用快照即时渲染，实时数据到了再覆盖，避免空白等待
   modalView='full';   // 默认展示完整内容
   document.getElementById('modalTitle').textContent=entry.key;
-  const info=['<span class="tag t-'+entry.status+' disabled" style="cursor:default">'+STATUS_TEXT[entry.status]+'</span>'];
-  if(entry.similarity!=null) info.push('相似度: <b>'+pct(entry.similarity)+'</b>');
-  if(entry.linesA!=null) info.push('行数: A '+entry.linesA+' / B '+entry.linesB);
-  info.push('大小: A '+kb(entry.sizeA)+' / B '+kb(entry.sizeB));
-  if(entry.relA) info.push('A: '+esc(entry.relA));
-  if(entry.relB) info.push('B: '+esc(entry.relB));
-  document.getElementById('modalInfo').innerHTML=info.join('<span style="color:#d0d7de">|</span>');
+  renderModalInfo();
   renderModalView();
   renderSyncBar();
   document.getElementById('overlay').classList.add('open');
+  fetchLiveDiff();
+}
+
+/** 信息栏；标明数据来源是实时还是报告快照 */
+function renderModalInfo(){
+  const e=modalEntry, s=modalSrc();
+  if(!e) return;
+  const info=['<span class="tag t-'+s.status+' disabled" style="cursor:default">'+STATUS_TEXT[s.status]+'</span>'];
+  if(s.similarity!=null) info.push('相似度: <b>'+pct(s.similarity)+'</b>');
+  if(s.linesA!=null) info.push('行数: A '+s.linesA+' / B '+s.linesB);
+  info.push('大小: A '+kb(s.sizeA)+' / B '+kb(s.sizeB));
+  info.push(modalLive
+    ? '<b style="color:#1a7f37">内容: 实时</b>'
+    : '内容: 快照 '+esc(String(DATA.meta.generatedAt||'').slice(0,19).replace('T',' ')));
+  if(e.relA) info.push('A: '+esc(e.relA));
+  if(e.relB) info.push('B: '+esc(e.relB));
+  document.getElementById('modalInfo').innerHTML=info.join('<span style="color:#d0d7de">|</span>');
+}
+
+/** 现读磁盘取最新对比；取不到（file:// 或服务不可用）则维持快照 */
+async function fetchLiveDiff(){
+  const e=modalEntry;
+  if(!e||!e.relA||!e.relB) return;   // 单边独有文件没有对比意义
+  try{
+    const res=await fetch('/api/live-diff?key='+encodeURIComponent(e.key));
+    const o=await res.json();
+    if(!o.ok) return;
+    if(modalEntry!==e) return;        // 期间已切到别的文件，丢弃
+    modalLive=o;
+    renderModalInfo();
+    renderModalView();
+    renderSyncBar();
+  }catch(err){ /* 维持快照 */ }
 }
 
 /** 按当前视图模式渲染弹窗主体（完整内容 / 仅看差异） */
 function renderModalView(){
-  const entry=modalEntry;
+  const e=modalEntry;
+  const s=modalSrc();          // 实时数据优先，快照兜底
   const body=document.getElementById('modalBody');
   const toggle=document.getElementById('viewToggle');
-  if(!entry){ body.innerHTML=''; toggle.style.display='none'; return; }
-  const canFull=!!entry.fullDiff;
-  const canDiff=!!entry.diff;
+  if(!e||!s){ body.innerHTML=''; toggle.style.display='none'; return; }
+  const canFull=!!s.fullDiff;
+  const canDiff=!!s.diff;
   // 只有既有正文又有 diff 的才提供切换
   if(canFull&&canDiff){
     toggle.innerHTML='<button class="vbtn'+(modalView==='full'?' on':'')+'" data-v="full">完整内容</button>'
@@ -480,18 +512,18 @@ function renderModalView(){
     toggle.innerHTML='';
     toggle.style.display='none';
   }
-  if(entry.status==='IDENTICAL'){
+  if(s.status==='IDENTICAL'){
     body.innerHTML='<div class="msg-box"><div class="big">字节级完全相同</div>该文件在两个项目中内容完全一致，可直接作为公共代码。</div>';
-  }else if(entry.status==='SAME_BY_RENAME'){
+  }else if(s.status==='SAME_BY_RENAME'){
     body.innerHTML='<div class="msg-box"><div class="big">仅项目名不同</div>将项目名（'+esc(NAME_A)+' / '+esc(NAME_B)+' 及其驼峰等形态）替换为占位符后，两边内容完全一致。<br>本质是公共代码，只是尚未参数化。</div>';
-  }else if(entry.status==='ONLY_A'||entry.status==='ONLY_B'){
-    const p=entry.status==='ONLY_A'?entry.relA:entry.relB;
-    const proj=entry.status==='ONLY_A'?NAME_A:NAME_B;
+  }else if(s.status==='ONLY_A'||s.status==='ONLY_B'){
+    const p=s.status==='ONLY_A'?e.relA:e.relB;
+    const proj=s.status==='ONLY_A'?NAME_A:NAME_B;
     body.innerHTML='<div class="msg-box"><div class="big">仅存在于 '+esc(proj)+'</div>该文件在另一个项目中没有同路径对应文件（业务代码），不做差异对比。<div class="path">'+esc(p)+'</div></div>';
   }else if(modalView==='full'&&canFull){
-    body.innerHTML=renderFullContent(entry);
+    body.innerHTML=renderFullContent(s);
   }else if(canDiff){
-    body.innerHTML=renderDiffTable(entry.diff,NAME_A,NAME_B);
+    body.innerHTML=renderDiffTable(s.diff,NAME_A,NAME_B);
   }else{
     body.innerHTML='<div class="msg-box"><div class="big">无对比数据</div>文件过大，未生成逐行对比。</div>';
   }
@@ -550,8 +582,9 @@ const SYNCABLE=new Set(['SIMILAR','DIVERGED']);
 /** 仅当文件两侧路径都存在、且状态可同步时才显示同步条 */
 function renderSyncBar(){
   const e=modalEntry;
+  const s=modalSrc();          // 用实时状态判断：同步后文件可能已变一致
   const bar=document.getElementById('syncBar');
-  const ok=!!e&&SYNCABLE.has(e.status)&&!!e.relA&&!!e.relB;
+  const ok=!!e&&!!s&&SYNCABLE.has(s.status)&&!!e.relA&&!!e.relB;
   bar.style.display=ok?'':'none';
   if(ok){
     document.getElementById('syncMain').style.display='';
@@ -593,6 +626,7 @@ document.getElementById('syncOk').addEventListener('click',async ()=>{
       document.getElementById('syncMain').style.display='';
       // 同步后报告已过期（服务端也会广播 changed）
       showLive('已同步，报告已过期，可重新对比');
+      fetchLiveDiff();   // 立即取最新：同步后该文件应已变一致，弹窗与同步条随之更新
     }else{
       msg.textContent=o.error||'同步失败';
       msg.className='sync-msg err';

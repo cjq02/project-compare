@@ -10,6 +10,7 @@
  *   GET  /api/state     摘要 + 是否有未刷新的变更
  *   GET  /api/report    完整对比数据（report.json 内容）
  *   GET  /api/events    SSE：项目文件变更提示
+ *   GET  /api/live-diff?key=  现读磁盘计算对比（弹窗用，非快照）
  *   POST /api/refresh   重跑对比并生成报告
  *   POST /api/sync      单文件同步 { key, direction: 'A2B' | 'B2A' }
  */
@@ -18,6 +19,8 @@ const fs = require('fs');
 const path = require('path');
 const { buildOptions } = require('./compare');
 const { runCompare } = require('./engine');
+const { comparePair } = require('./comparator');
+const { createNameForms } = require('./normalizer');
 
 const DEFAULT_PORT = 18899;
 const IGNORE_DIR_RE = /(^|\/)(node_modules|target|dist|\.git|\.idea|output)(\/|$)/;
@@ -118,6 +121,55 @@ function watchProject(dir) {
   }
 }
 
+/* ---------- 按需实时对比：现读磁盘，不依赖报告快照 ---------- */
+/** 项目名形态由目录名决定，进程内不变，缓存避免重复构造 */
+let _formsCache = null;
+function getForms(meta) {
+  if (_formsCache && _formsCache.dirA === meta.dirA && _formsCache.dirB === meta.dirB) return _formsCache;
+  _formsCache = {
+    dirA: meta.dirA, dirB: meta.dirB,
+    a: createNameForms(path.basename(meta.dirA)),
+    b: createNameForms(path.basename(meta.dirB)),
+  };
+  return _formsCache;
+}
+
+/** 拼出绝对路径并校验仍在项目目录内（防路径穿越） */
+function safePath(baseDir, rel) {
+  const base = path.resolve(baseDir) + path.sep;
+  const full = path.resolve(path.join(baseDir, rel));
+  return full.startsWith(base) ? full : null;
+}
+
+/**
+ * 现场读取两侧文件并计算对比，返回最新的 diff / fullDiff。
+ * 报告里内嵌的 fullDiff 是上次对比的快照，这里是实时的。
+ * @param {string} key 归一化后的文件 key
+ */
+function liveDiff(key) {
+  const d = ensureReport();
+  const entry = (d.files || []).find((f) => f.key === key);
+  if (!entry) return { ok: false, error: '未找到该文件: ' + key };
+  if (!entry.relA || !entry.relB) return { ok: false, error: '该文件缺少一侧，无对比意义' };
+  const fA = safePath(d.meta.dirA, entry.relA);
+  const fB = safePath(d.meta.dirB, entry.relB);
+  if (!fA || !fB) return { ok: false, error: '路径越界，已拒绝' };
+  if (!fs.existsSync(fA)) return { ok: false, error: 'A 侧文件不存在: ' + entry.relA };
+  if (!fs.existsSync(fB)) return { ok: false, error: 'B 侧文件不存在: ' + entry.relB };
+  const forms = getForms(d.meta);
+  const r = comparePair(fA, fB, forms.a, forms.b, {
+    similarityThreshold: d.meta.threshold != null ? d.meta.threshold : opts.threshold,
+    maxDiffLines: opts.maxDiffLines,
+  });
+  return {
+    ok: true, key,
+    status: r.status, similarity: r.similarity,
+    diff: r.diff, fullDiff: r.fullDiff,
+    sizeA: r.sizeA, sizeB: r.sizeB, linesA: r.linesA, linesB: r.linesB,
+    at: Date.now(),
+  };
+}
+
 /* ---------- HTTP ---------- */
 function sendJson(res, code, obj) {
   const body = JSON.stringify(obj);
@@ -208,6 +260,11 @@ const server = http.createServer(async (req, res) => {
       const d = ensureReport();
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       return res.end(JSON.stringify(d));
+    }
+
+    if (req.method === 'GET' && p === '/api/live-diff') {
+      const key = url.searchParams.get('key') || '';
+      return sendJson(res, 200, liveDiff(key));
     }
 
     if (req.method === 'GET' && p === '/api/events') {
