@@ -32,11 +32,15 @@ function globToRegex(pattern) {
  *
  * 语义：
  *  1. 若 include 非空 —— 文件必须命中至少一条 include 才保留；include 为空则不限制
- *  2. 命中任意一条 exclude 则剔除
+ *  2. exclude 按书写顺序逐条求值，命中即剔除，最后由命中的规则决定去留；
+ *     以 `!` 开头的规则为例外，命中则撤销先前的排除
  *
  * 每条规则同时对"原始相对路径"和"归一化路径（含 {PROJECT}）"做匹配，
  * 因此写 `{PROJECT}-vue/src/**` 可一次作用于两个项目；
  * 写具体项目名（如 `sport-asset-vue/...`）则只作用于该项目。
+ *
+ * 注意 include 不能"救回"被 exclude 的文件 —— 要保留被排除目录中的个别文件，
+ * 需用 `!` 例外（如 `dir/*` 后跟 `!dir/keep.ts`）。
  *
  * @param {string[]} includePatterns
  * @param {string[]} excludePatterns
@@ -46,7 +50,11 @@ function compileFilter(includePatterns, excludePatterns) {
   const inc = toList(includePatterns);
   const exc = toList(excludePatterns);
   const incRes = inc.map(globToRegex);
-  const excRes = exc.map(globToRegex);
+  // `!` 前缀为例外规则，用于撤销先前的排除
+  const excRes = exc.map((p) => {
+    const neg = p.startsWith('!');
+    return { neg, re: globToRegex(neg ? p.slice(1) : p) };
+  });
 
   const hitAny = (regexes, relPath, normKey) => {
     if (!regexes.length) return false;
@@ -63,8 +71,15 @@ function compileFilter(includePatterns, excludePatterns) {
      */
     keep(relPath, normKey) {
       if (incRes.length && !hitAny(incRes, relPath, normKey)) return false;
-      if (hitAny(excRes, relPath, normKey)) return false;
-      return true;
+      // 黑名单按书写顺序求值，`!` 规则可撤销先前的排除
+      // （如先排除整个目录，再单独放行其中某个文件）
+      const rp = String(relPath).replace(/\\/g, '/');
+      const nk = String(normKey || '').replace(/\\/g, '/');
+      let excluded = false;
+      for (const r of excRes) {
+        if (r.re.test(rp) || r.re.test(nk)) excluded = !r.neg;
+      }
+      return !excluded;
     },
   };
 }
