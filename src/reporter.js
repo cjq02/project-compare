@@ -17,7 +17,9 @@ function writeReport(data, outDir) {
   const template = fs.readFileSync(templatePath, 'utf8');
   // 转义 < 防止数据中出现 </script> 提前闭合
   const json = JSON.stringify(data).replace(/</g, '\\u003c');
-  const html = template.replace('/*__DATA__*/null', json);
+  // 必须用函数形式替换：字符串形式会把 json 里的 $& $' $` 当特殊模式展开，
+  // 而 diff 内容含 ${...} / $' 等代码片段，会把模板 HTML 注入进 <script> 导致语法错误
+  const html = template.replace('/*__DATA__*/null', () => json);
   const htmlPath = path.join(outDir, 'report.html');
   fs.writeFileSync(htmlPath, html, 'utf8');
 

@@ -7,58 +7,72 @@
 <style>
   :root {
     --bg: #f6f8fa; --card: #fff; --border: #d0d7de; --text: #1f2328; --muted: #656d76;
-    --accent: #0969da;
-    --c-identical: #1a7f37; --c-rename: #0e8a8a; --c-similar: #bf8700; --c-diverged: #cf222e; --c-only: #8b949e;
+    --hover: #f6f9fc; --sel: #ddf4ff;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
   header { background: var(--card); border-bottom: 1px solid var(--border); padding: 10px 20px; flex-shrink: 0; }
   header h1 { margin: 0 0 2px; font-size: 17px; }
   header .meta { color: var(--muted); font-size: 11px; }
-  .cards { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 20px 0; flex-shrink: 0; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 14px; min-width: 100px; }
-  .card .num { font-size: 19px; font-weight: 700; }
+  .cards { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 20px 0; flex-shrink: 0; align-items: stretch; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 14px; min-width: 96px; }
+  .card .num { font-size: 19px; font-weight: 700; line-height: 1.2; }
   .card .label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .card.overall { display: flex; flex-direction: column; justify-content: center; }
   .toolbar { display: flex; align-items: center; gap: 14px; padding: 10px 20px; flex-wrap: wrap; flex-shrink: 0; }
-  .toolbar input[type=text] { padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; width: 260px; }
+  .toolbar input[type=text] { padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; width: 280px; }
   .toolbar select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; }
+  .toolbar .count { color: var(--muted); font-size: 12px; margin-left: auto; }
   .legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
-  .legend .dot { margin-right: 4px; }
-  main { flex: 1; display: flex; gap: 12px; padding: 0 20px 14px; min-height: 0; }
-  .pane { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; min-width: 0; }
-  .pane-head { padding: 8px 14px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 13px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
-  .pane-head .count { color: var(--muted); font-weight: 400; font-size: 12px; }
-  .tree { overflow: auto; padding: 6px 0; font-size: 13px; flex: 1; }
-  .dir-row, .file-row { display: flex; align-items: center; gap: 5px; padding: 2px 10px; cursor: pointer; white-space: nowrap; user-select: none; }
-  .dir-row:hover, .file-row:hover { background: #f0f6ff; }
-  .dir-row .chev { width: 12px; flex-shrink: 0; font-size: 10px; color: var(--muted); transition: transform .1s; display: inline-block; }
-  .dir-row.open .chev { transform: rotate(90deg); }
-  .dir-row .name { font-weight: 500; }
-  .dir-row .fcount { color: var(--muted); font-size: 11px; }
-  .file-row .name { overflow: hidden; text-overflow: ellipsis; }
-  .file-row .sim { margin-left: auto; color: var(--muted); font-size: 11px; padding-left: 8px; }
-  .file-row.selected { background: #ddf4ff; outline: 1px solid #54aeff66; }
+  main { flex: 1; padding: 0 20px 14px; min-height: 0; display: flex; }
+  .pane { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: auto; min-width: 0; }
+
+  table.tree-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.tree-table th { position: sticky; top: 0; background: #f0f2f5; z-index: 2; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  table.tree-table td { padding: 4px 12px; border-bottom: 1px solid #f1f2f4; vertical-align: middle; }
+  table.tree-table tr.row:hover td { background: var(--hover); }
+  table.tree-table tr.dir td { background: #fafbfc; font-weight: 500; }
+  table.tree-table tr.dir:hover td { background: #f0f4f8; }
+
+  .name-cell { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .chev { width: 13px; flex-shrink: 0; font-size: 9px; color: var(--muted); display: inline-block; transition: transform .12s; cursor: pointer; }
+  .chev.open { transform: rotate(90deg); }
+  .chev.leaf { visibility: hidden; }
+  .name-cell .dot { flex-shrink: 0; }
+  .name-cell .nm { overflow: hidden; text-overflow: ellipsis; }
+  .name-cell .fcount { color: var(--muted); font-weight: 400; font-size: 11px; }
+  td.side { font-family: Consolas, monospace; font-size: 12px; white-space: nowrap; }
+  td.side .miss { color: #c0c4cc; }
+  td.side .ok { color: var(--text); }
+  td.stat { white-space: nowrap; }
+  td.stat .aggline { color: var(--muted); font-size: 11px; font-family: Consolas, monospace; }
+  td.sim { font-family: Consolas, monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
+
   .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
-  .s-IDENTICAL { background: var(--c-identical); }
-  .s-SAME_BY_RENAME { background: var(--c-rename); }
-  .s-SIMILAR { background: var(--c-similar); }
-  .s-DIVERGED { background: var(--c-diverged); }
-  .s-ONLY_A, .s-ONLY_B { background: var(--c-only); }
-  /* 弹窗 */
+  .s-IDENTICAL { background: #1a7f37; }
+  .s-SAME_BY_RENAME { background: #0e8a8a; }
+  .s-SIMILAR { background: #bf8700; }
+  .s-DIVERGED { background: #cf222e; }
+  .s-ONLY_A, .s-ONLY_B { background: #8b949e; }
+  .s-MIXED { background: linear-gradient(135deg,#1a7f37 0 50%, #cf222e 50% 100%); }
+
+  .tag { display: inline-block; padding: 0 9px; border-radius: 10px; font-size: 11px; border: 1px solid var(--border); cursor: pointer; line-height: 18px; }
+  .tag.t-IDENTICAL { background: #dafbe1; color: #1a7f37; border-color: #1a7f3733; }
+  .tag.t-SAME_BY_RENAME { background: #ddf4ff; color: #0e8a8a; border-color: #0e8a8a33; }
+  .tag.t-SIMILAR { background: #fff8c5; color: #9a6700; border-color: #bf870055; }
+  .tag.t-DIVERGED { background: #ffebe9; color: #cf222e; border-color: #cf222e44; }
+  .tag.t-ONLY_A, .tag.t-ONLY_B { background: #f0f1f2; color: #656d76; }
+  .tag.t-MIXED { background: #fff8c5; color: #9a6700; border-color: #bf870055; cursor: default; }
+  .tag.disabled { cursor: default; }
+
   .overlay { position: fixed; inset: 0; background: rgba(140,150,160,.45); display: none; z-index: 50; }
   .overlay.open { display: flex; align-items: center; justify-content: center; }
   .modal { background: var(--card); border-radius: 10px; width: min(1360px, 94vw); height: min(86vh, 900px); display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
-  .modal-head { padding: 12px 18px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .modal-head { padding: 12px 18px; border-bottom: 1px solid var(--border); flex-shrink: 0; position: relative; }
   .modal-head .title { font-weight: 700; font-size: 15px; font-family: Consolas, monospace; }
-  .modal-head .info { margin-top: 6px; display: flex; gap: 14px; font-size: 12px; color: var(--muted); flex-wrap: wrap; align-items: center; }
-  .modal-head .close { position: absolute; top: 10px; right: 14px; border: 0; background: none; font-size: 22px; cursor: pointer; color: var(--muted); }
-  .modal-head { position: relative; }
-  .status-badge { display: inline-block; padding: 1px 10px; border-radius: 10px; font-size: 11px; border: 1px solid var(--border); }
-  .status-badge.SIMILAR { background: #fff8c5; color: var(--c-similar); }
-  .status-badge.DIVERGED { background: var(--del, #ffebe9); color: var(--c-diverged); }
-  .status-badge.IDENTICAL { background: #dafbe1; color: var(--c-identical); }
-  .status-badge.SAME_BY_RENAME { background: #ddf4ff; color: var(--c-rename); }
-  .modal-body { flex: 1; overflow: auto; padding: 0; }
+  .modal-head .info { margin-top: 6px; display: flex; gap: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; align-items: center; }
+  .modal-head .close { position: absolute; top: 8px; right: 12px; border: 0; background: none; font-size: 24px; cursor: pointer; color: var(--muted); line-height: 1; }
+  .modal-body { flex: 1; overflow: auto; }
   .diff-table { border-collapse: collapse; width: 100%; font-family: Consolas, "Courier New", monospace; font-size: 12px; line-height: 1.55; }
   .diff-table th { position: sticky; top: 0; background: #f0f2f5; z-index: 2; padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12px; }
   .diff-table td { padding: 0 10px; vertical-align: top; white-space: pre-wrap; word-break: break-all; width: 50%; border-bottom: 1px solid #f0f1f2; }
@@ -78,31 +92,38 @@
 </header>
 <div class="cards" id="cards"></div>
 <div class="toolbar">
-  <input type="text" id="search" placeholder="搜索文件路径...">
+  <input type="text" id="search" placeholder="搜索路径 / 文件名（支持 A、B 的真实路径）...">
   <select id="filter">
     <option value="all">全部文件</option>
-    <option value="common">两边共有（公共代码）</option>
+    <option value="common">两边共有</option>
     <option value="diff" selected>有差异（漂移 + 差异大）</option>
-    <option value="same">无差异（完全相同 + 仅改名）</option>
-    <option value="only">仅单边独有（业务代码）</option>
+    <option value="same">无差异（相同 + 仅改名）</option>
+    <option value="only">仅单边独有</option>
   </select>
+  <button id="expandAll" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px">全部展开</button>
+  <button id="collapseAll" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:12px">全部折叠</button>
   <div class="legend">
     <span><span class="dot s-IDENTICAL"></span>完全相同</span>
     <span><span class="dot s-SAME_BY_RENAME"></span>仅项目名不同</span>
     <span><span class="dot s-SIMILAR"></span>相似(漂移)</span>
     <span><span class="dot s-DIVERGED"></span>差异较大</span>
     <span><span class="dot s-ONLY_A"></span><span class="dot s-ONLY_B"></span>单边独有</span>
-    <span style="margin-left:8px">点击文件查看差异弹窗</span>
+    <span><span class="dot s-MIXED"></span>混合</span>
   </div>
+  <div class="count" id="visCount"></div>
 </div>
 <main>
   <div class="pane">
-    <div class="pane-head"><span id="paneATitle">A</span><span class="count" id="paneACount"></span></div>
-    <div class="tree" id="treeA"></div>
-  </div>
-  <div class="pane">
-    <div class="pane-head"><span id="paneBTitle">B</span><span class="count" id="paneBCount"></span></div>
-    <div class="tree" id="treeB"></div>
+    <table class="tree-table">
+      <thead><tr>
+        <th style="min-width:340px">名称</th>
+        <th id="thA" style="min-width:130px">A</th>
+        <th id="thB" style="min-width:130px">B</th>
+        <th style="width:130px">状态</th>
+        <th style="min-width:220px">相似度 / 统计</th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
   </div>
 </main>
 <div class="overlay" id="overlay">
@@ -119,221 +140,244 @@
 const DATA = /*__DATA__*/null;
 const NAME_A = DATA.meta.projectA, NAME_B = DATA.meta.projectB;
 
-function esc(s) {
-  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-function pct(v) { return (v * 100).toFixed(1) + '%'; }
-function kb(n) { return n == null ? '-' : n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB'; }
-const STATUS_TEXT = {
-  IDENTICAL: '完全相同', SAME_BY_RENAME: '仅项目名不同',
-  SIMILAR: '相似（有漂移）', DIVERGED: '差异较大',
-  ONLY_A: `仅 ${NAME_A} 独有`, ONLY_B: `仅 ${NAME_B} 独有`,
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function pct(v){return (v*100).toFixed(1)+'%';}
+function kb(n){return n==null?'-':n<1024?n+' B':(n/1024).toFixed(1)+' KB';}
+const STATUS_TEXT={
+  IDENTICAL:'完全相同',SAME_BY_RENAME:'仅项目名不同',SIMILAR:'相似(漂移)',DIVERGED:'差异较大',
+  ONLY_A:'仅 '+NAME_A,ONLY_B:'仅 '+NAME_B
 };
+const ALL_STATUS=['IDENTICAL','SAME_BY_RENAME','SIMILAR','DIVERGED','ONLY_A','ONLY_B'];
 
-/* ---------- 概览卡片 ---------- */
-(function renderCards() {
-  const s = DATA.summary;
-  const items = [
-    ['共有文件', s.common], ['完全相同', s.identical], ['仅项目名不同', s.sameByRename],
-    ['相似(漂移)', s.similar], ['差异较大', s.diverged],
-    [`仅 ${NAME_A}`, s.onlyA], [`仅 ${NAME_B}`, s.onlyB],
-  ];
-  document.getElementById('cards').innerHTML = items.map(([label, num]) =>
-    `<div class="card"><div class="num">${num}</div><div class="label">${esc(label)}</div></div>`).join('');
-  document.getElementById('meta').textContent =
-    `${NAME_A} (${DATA.meta.dirA})  ↔  ${NAME_B} (${DATA.meta.dirB})    生成：${DATA.meta.generatedAt}` +
-    (DATA.meta.excludePatterns && DATA.meta.excludePatterns.length
-      ? `    已排除 ${DATA.meta.excludedCount} 个文件：${DATA.meta.excludePatterns.join(' , ')}` : '');
-  document.getElementById('paneATitle').textContent = NAME_A;
-  document.getElementById('paneBTitle').textContent = NAME_B;
-})();
-
-/* ---------- 树 ---------- */
-function buildTree(side) {
-  const root = { dirs: new Map(), files: [] };
-  for (const f of DATA.files) {
-    const rel = side === 'A' ? f.relA : f.relB;
-    if (!rel) continue;
-    const parts = rel.split('/');
-    let node = root;
-    for (let i = 0; i < parts.length - 1; i++) {
-      if (!node.dirs.has(parts[i])) node.dirs.set(parts[i], { dirs: new Map(), files: [] });
-      node = node.dirs.get(parts[i]);
+/* ---------- 合并树 ---------- */
+function buildTree(){
+  const root={name:'',path:'',dirs:new Map(),files:[],type:'dir'};
+  for(const f of DATA.files){
+    const parts=f.key.split('/');
+    let node=root;
+    for(let i=0;i<parts.length-1;i++){
+      if(!node.dirs.has(parts[i])){
+        node.dirs.set(parts[i],{name:parts[i],path:parts.slice(0,i+1).join('/'),dirs:new Map(),files:[],type:'dir'});
+      }
+      node=node.dirs.get(parts[i]);
     }
-    node.files.push({ name: parts[parts.length - 1], path: rel, entry: f });
+    node.files.push({name:parts[parts.length-1],path:f.key,type:'file',entry:f});
   }
   return root;
 }
-
-const trees = {}; // side -> { root, nodeRefs: Map<path, {rowEl, childEl, node}> }
-
-function countFiles(node) {
-  let n = node.files.length;
-  for (const d of node.dirs.values()) n += countFiles(d);
-  return n;
-}
-
-function renderTree(side) {
-  const root = buildTree(side);
-  const container = document.getElementById(side === 'A' ? 'treeA' : 'treeB');
-  container.innerHTML = '';
-  const refs = new Map();
-
-  function renderDir(node, parentEl, depth) {
-    const dirs = [...node.dirs.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-    for (const [name, child] of dirs) {
-      const row = document.createElement('div');
-      row.className = 'dir-row' + (depth === 0 ? ' open' : '');
-      row.innerHTML = `<span class="chev">&#9654;</span><span class="name">${esc(name)}</span><span class="fcount">${countFiles(child)}</span>`;
-      const childWrap = document.createElement('div');
-      childWrap.style.display = depth === 0 ? '' : 'none';
-      row.addEventListener('click', () => {
-        row.classList.toggle('open');
-        childWrap.style.display = row.classList.contains('open') ? '' : 'none';
-      });
-      parentEl.appendChild(row);
-      parentEl.appendChild(childWrap);
-      renderDir(child, childWrap, depth + 1);
-    }
-    const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name));
-    for (const f of files) {
-      const row = document.createElement('div');
-      row.className = 'file-row';
-      row.title = f.path;
-      row.dataset.path = f.path;
-      row.dataset.status = f.entry.status;
-      row.dataset.key = f.entry.key;
-      const sim = f.entry.similarity != null && (f.entry.status === 'SIMILAR' || f.entry.status === 'DIVERGED')
-        ? `<span class="sim">${pct(f.entry.similarity)}</span>` : '';
-      row.innerHTML = `<span class="dot s-${f.entry.status}"></span><span class="name">${esc(f.name)}</span>${sim}`;
-      row.addEventListener('click', () => openModal(f.entry, side, row));
-      parentEl.appendChild(row);
-      refs.set(f.path, { rowEl: row, file: f });
-    }
+/** 目录聚合统计 */
+function agg(node){
+  const c={total:0,countA:0,countB:0};
+  for(const k of ALL_STATUS) c[k]=0;
+  for(const f of node.files){
+    const s=f.entry.status; c.total++; c[s]++;
+    if(f.entry.relA) c.countA++;
+    if(f.entry.relB) c.countB++;
   }
-  renderDir(root, container, 0);
-  trees[side] = { root, refs };
+  for(const d of node.dirs.values()){
+    const s=agg(d);
+    c.total+=s.total; c.countA+=s.countA; c.countB+=s.countB;
+    for(const k of ALL_STATUS) c[k]+=s[k];
+  }
+  node.agg=c;
+  return c;
+}
+/** 目录整体状态：有漂移/差异 → MIXED；否则按存在性归类 */
+function dirStatus(c){
+  if(c.SIMILAR||c.DIVERGED) return 'MIXED';
+  if(c.ONLY_A&&c.ONLY_B) return 'MIXED';
+  if(c.ONLY_A) return 'ONLY_A';
+  if(c.ONLY_B) return 'ONLY_B';
+  if(c.SAME_BY_RENAME) return 'SAME_BY_RENAME';
+  return 'IDENTICAL';
+}
+function aggLine(c){
+  const p=[];
+  if(c.IDENTICAL) p.push('相同 '+c.IDENTICAL);
+  if(c.SAME_BY_RENAME) p.push('改名 '+c.SAME_BY_RENAME);
+  if(c.SIMILAR) p.push('漂移 '+c.SIMILAR);
+  if(c.DIVERGED) p.push('差异 '+c.DIVERGED);
+  if(c.ONLY_A) p.push('仅A '+c.ONLY_A);
+  if(c.ONLY_B) p.push('仅B '+c.ONLY_B);
+  return p.join(' · ')||'-';
 }
 
-/* ---------- 过滤 / 搜索 ---------- */
-function matchesFilter(status, mode) {
-  if (mode === 'all') return true;
-  if (mode === 'common') return status !== 'ONLY_A' && status !== 'ONLY_B';
-  if (mode === 'diff') return status === 'SIMILAR' || status === 'DIVERGED';
-  if (mode === 'same') return status === 'IDENTICAL' || status === 'SAME_BY_RENAME';
-  if (mode === 'only') return status === 'ONLY_A' || status === 'ONLY_B';
+const root=buildTree();
+agg(root);
+const state={ expanded:new Set(), search:'', filter:'diff' };
+// 默认展开顶层模块目录
+for(const d of root.dirs.values()) state.expanded.add(d.path);
+
+/* ---------- 可见性 ---------- */
+function matchesFilter(status){
+  const m=state.filter;
+  if(m==='all') return true;
+  if(m==='common') return status!=='ONLY_A'&&status!=='ONLY_B';
+  if(m==='diff') return status==='SIMILAR'||status==='DIVERGED';
+  if(m==='same') return status==='IDENTICAL'||status==='SAME_BY_RENAME';
+  if(m==='only') return status==='ONLY_A'||status==='ONLY_B';
   return true;
 }
-
-function applyFilter() {
-  const q = document.getElementById('search').value.trim().toLowerCase();
-  const mode = document.getElementById('filter').value;
-  for (const side of ['A', 'B']) {
-    const container = document.getElementById(side === 'A' ? 'treeA' : 'treeB');
-    let shown = 0, total = 0;
-    container.querySelectorAll('.file-row').forEach((row) => {
-      total++;
-      const hit = matchesFilter(row.dataset.status, mode) &&
-        (!q || row.dataset.path.toLowerCase().includes(q));
-      row.style.display = hit ? '' : 'none';
-      if (hit) shown++;
-    });
-    // 目录：有可见后代才显示，并展开有可见后代的目录
-    container.querySelectorAll('.dir-row').forEach((row) => {
-      const wrap = row.nextElementSibling;
-      if (!wrap || !wrap.classList) return;
-      const hasVisible = wrap.querySelector('.file-row:not([style*="display: none"]), .dir-row:not([style*="display: none"])');
-      row.style.display = hasVisible ? '' : 'none';
-      if (hasVisible && q) { row.classList.add('open'); wrap.style.display = ''; }
-    });
-    document.getElementById(side === 'A' ? 'paneACount' : 'paneBCount').textContent = `${shown} / ${total} 个文件`;
-  }
+function fileVisible(f){
+  if(!matchesFilter(f.entry.status)) return false;
+  const q=state.search;
+  if(!q) return true;
+  return f.path.toLowerCase().includes(q)
+    ||(f.entry.relA||'').toLowerCase().includes(q)
+    ||(f.entry.relB||'').toLowerCase().includes(q);
 }
-let searchTimer;
-document.getElementById('search').addEventListener('input', () => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(applyFilter, 200);
+function dirHasVisible(node){
+  for(const f of node.files) if(fileVisible(f)) return true;
+  for(const d of node.dirs.values()) if(dirHasVisible(d)) return true;
+  return false;
+}
+
+/* ---------- 渲染 ---------- */
+function render(){
+  const out=[];
+  let visFiles=0;
+  function emit(node,depth){
+    const dirs=[...node.dirs.values()].filter(dirHasVisible).sort((a,b)=>a.name.localeCompare(b.name));
+    const files=node.files.filter(fileVisible).sort((a,b)=>a.name.localeCompare(b.name));
+    for(const d of dirs){
+      const c=d.agg, st=dirStatus(c), open=state.expanded.has(d.path);
+      out.push(
+        '<tr class="row dir" data-path="'+esc(d.path)+'" data-type="dir">'+
+        '<td><div class="name-cell" style="padding-left:'+(depth*18)+'px">'+
+          '<span class="chev'+(open?' open':'')+'" data-toggle="'+esc(d.path)+'">&#9654;</span>'+
+          '<span class="dot s-'+st+'"></span><span class="nm">'+esc(d.name)+'</span>'+
+          '<span class="fcount">'+c.total+'</span></div></td>'+
+        '<td class="side"><span class="ok">'+c.countA+'</span></td>'+
+        '<td class="side"><span class="ok">'+c.countB+'</span></td>'+
+        '<td class="stat"><span class="tag t-'+st+' disabled">'+(st==='MIXED'?'有差异':STATUS_TEXT[st])+'</span></td>'+
+        '<td class="sim">'+esc(aggLine(c))+'</td></tr>'
+      );
+      if(open) emit(d,depth+1);
+    }
+    for(const f of files){
+      visFiles++;
+      const e=f.entry;
+      const aCell=e.relA?'<span class="ok" title="'+esc(e.relA)+'">'+kb(e.sizeA)+'</span>':'<span class="miss">—</span>';
+      const bCell=e.relB?'<span class="ok" title="'+esc(e.relB)+'">'+kb(e.sizeB)+'</span>':'<span class="miss">—</span>';
+      const clickable=(e.status==='SIMILAR'||e.status==='DIVERGED');
+      const sim=e.similarity!=null?pct(e.similarity):'-';
+      out.push(
+        '<tr class="row" data-type="file" data-key="'+esc(e.key)+'">'+
+        '<td><div class="name-cell" style="padding-left:'+(depth*18)+'px">'+
+          '<span class="chev leaf"></span><span class="dot s-'+e.status+'"></span>'+
+          '<span class="nm" title="'+esc(e.key)+'">'+esc(f.name)+'</span></div></td>'+
+        '<td class="side">'+aCell+'</td>'+
+        '<td class="side">'+bCell+'</td>'+
+        '<td class="stat"><span class="tag t-'+e.status+(clickable?'':' disabled')+'" data-key="'+esc(e.key)+'">'+STATUS_TEXT[e.status]+'</span></td>'+
+        '<td class="sim">'+sim+'</td></tr>'
+      );
+    }
+  }
+  emit(root,0);
+  document.getElementById('tbody').innerHTML=out.join('');
+  document.getElementById('visCount').textContent='显示 '+visFiles+' / '+DATA.files.length+' 个文件';
+}
+
+/* ---------- 交互 ---------- */
+document.getElementById('tbody').addEventListener('click',(ev)=>{
+  const t=ev.target.closest('[data-toggle]');
+  if(t){
+    const p=t.getAttribute('data-toggle');
+    if(state.expanded.has(p)) state.expanded.delete(p); else state.expanded.add(p);
+    render();
+    return;
+  }
+  const tag=ev.target.closest('.tag[data-key]');
+  if(tag && !tag.classList.contains('disabled')){
+    const e=DATA.files.find(f=>f.key===tag.getAttribute('data-key'));
+    if(e) openModal(e);
+  }
 });
-document.getElementById('filter').addEventListener('change', applyFilter);
+document.getElementById('expandAll').addEventListener('click',()=>{
+  (function walk(n){for(const d of n.dirs.values()){state.expanded.add(d.path);walk(d);}})(root);
+  render();
+});
+document.getElementById('collapseAll').addEventListener('click',()=>{ state.expanded.clear(); render(); });
+
+let timer;
+document.getElementById('search').addEventListener('input',(e)=>{
+  clearTimeout(timer);
+  timer=setTimeout(()=>{
+    state.search=e.target.value.trim().toLowerCase();
+    // 搜索时自动展开命中路径的所有祖先
+    if(state.search){
+      (function walk(n){
+        for(const d of n.dirs.values()){
+          if(dirHasVisible(d)){ state.expanded.add(d.path); walk(d); }
+        }
+      })(root);
+    }
+    render();
+  },200);
+});
+document.getElementById('filter').addEventListener('change',(e)=>{ state.filter=e.target.value; render(); });
 
 /* ---------- 弹窗 ---------- */
-let selectedRows = [];
-function clearSelection() {
-  selectedRows.forEach((r) => r.classList.remove('selected'));
-  selectedRows = [];
-}
+function openModal(entry){
+  document.getElementById('modalTitle').textContent=entry.key;
+  const info=['<span class="tag t-'+entry.status+' disabled" style="cursor:default">'+STATUS_TEXT[entry.status]+'</span>'];
+  if(entry.similarity!=null) info.push('相似度: <b>'+pct(entry.similarity)+'</b>');
+  if(entry.linesA!=null) info.push('行数: A '+entry.linesA+' / B '+entry.linesB);
+  info.push('大小: A '+kb(entry.sizeA)+' / B '+kb(entry.sizeB));
+  if(entry.relA) info.push('A: '+esc(entry.relA));
+  if(entry.relB) info.push('B: '+esc(entry.relB));
+  document.getElementById('modalInfo').innerHTML=info.join('<span style="color:#d0d7de">|</span>');
 
-function openModal(entry, side, rowEl) {
-  clearSelection();
-  const selfRow = rowEl || (side && trees[side] && trees[side].refs.get(side === 'A' ? entry.relA : entry.relB)?.rowEl);
-  if (selfRow) { selfRow.classList.add('selected'); selectedRows.push(selfRow); }
-  // 对侧文件同步高亮（共有文件）
-  const otherSide = side === 'A' ? 'B' : 'A';
-  if (trees[otherSide] && (entry.relA && entry.relB)) {
-    const otherRel = otherSide === 'A' ? entry.relA : entry.relB;
-    const ref = trees[otherSide].refs.get(otherRel);
-    if (ref) { ref.rowEl.classList.add('selected'); selectedRows.push(ref.rowEl); ref.rowEl.scrollIntoView({ block: 'nearest' }); }
-  }
-
-  document.getElementById('modalTitle').textContent = entry.key;
-  const info = [`<span class="status-badge ${entry.status}">${STATUS_TEXT[entry.status]}</span>`];
-  if (entry.similarity != null) info.push(`相似度: <b>${pct(entry.similarity)}</b>`);
-  if (entry.linesA != null) info.push(`行数: A ${entry.linesA} / B ${entry.linesB}`);
-  info.push(`大小: A ${kb(entry.sizeA)} / B ${kb(entry.sizeB)}`);
-  if (entry.relA) info.push(`A: ${esc(entry.relA)}`);
-  if (entry.relB) info.push(`B: ${esc(entry.relB)}`);
-  document.getElementById('modalInfo').innerHTML = info.join('<span style="color:#d0d7de">|</span>');
-
-  const body = document.getElementById('modalBody');
-  if (entry.status === 'IDENTICAL') {
-    body.innerHTML = `<div class="msg-box"><div class="big">字节级完全相同</div>该文件在两个项目中内容完全一致，可直接作为公共代码。</div>`;
-  } else if (entry.status === 'SAME_BY_RENAME') {
-    body.innerHTML = `<div class="msg-box"><div class="big">仅项目名不同</div>将项目名（${esc(NAME_A)} / ${esc(NAME_B)} 及其驼峰等形态）替换为占位符后，两边内容完全一致。<br>本质是公共代码，只是尚未参数化。</div>`;
-  } else if (entry.status === 'ONLY_A' || entry.status === 'ONLY_B') {
-    const p = entry.status === 'ONLY_A' ? entry.relA : entry.relB;
-    const proj = entry.status === 'ONLY_A' ? NAME_A : NAME_B;
-    body.innerHTML = `<div class="msg-box"><div class="big">仅存在于 ${esc(proj)}</div>该文件在另一个项目中没有同路径对应文件（业务代码），不做差异对比。<div class="path">${esc(p)}</div></div>`;
-  } else if (entry.diff) {
-    body.innerHTML = renderDiffTable(entry.diff, NAME_A, NAME_B);
-  } else {
-    body.innerHTML = `<div class="msg-box"><div class="big">无 diff 数据</div>文件过大，未生成逐行对比。</div>`;
+  const body=document.getElementById('modalBody');
+  if(entry.status==='IDENTICAL'){
+    body.innerHTML='<div class="msg-box"><div class="big">字节级完全相同</div>该文件在两个项目中内容完全一致，可直接作为公共代码。</div>';
+  }else if(entry.status==='SAME_BY_RENAME'){
+    body.innerHTML='<div class="msg-box"><div class="big">仅项目名不同</div>将项目名（'+esc(NAME_A)+' / '+esc(NAME_B)+' 及其驼峰等形态）替换为占位符后，两边内容完全一致。<br>本质是公共代码，只是尚未参数化。</div>';
+  }else if(entry.status==='ONLY_A'||entry.status==='ONLY_B'){
+    const p=entry.status==='ONLY_A'?entry.relA:entry.relB;
+    const proj=entry.status==='ONLY_A'?NAME_A:NAME_B;
+    body.innerHTML='<div class="msg-box"><div class="big">仅存在于 '+esc(proj)+'</div>该文件在另一个项目中没有同路径对应文件（业务代码），不做差异对比。<div class="path">'+esc(p)+'</div></div>';
+  }else if(entry.diff){
+    body.innerHTML=renderDiffTable(entry.diff,NAME_A,NAME_B);
+  }else{
+    body.innerHTML='<div class="msg-box"><div class="big">无 diff 数据</div>文件过大，未生成逐行对比。</div>';
   }
   document.getElementById('overlay').classList.add('open');
 }
-
-function renderDiffTable(diffText, nameA, nameB) {
-  const rows = [];
-  for (const line of diffText.split('\n')) {
-    if (line.startsWith('--- ') || line.startsWith('+++ ')) continue;
-    if (line.startsWith('@@')) rows.push(`<tr class="hunk"><td colspan="2">${esc(line)}</td></tr>`);
-    else if (line.startsWith('-')) rows.push(`<tr><td class="l">${esc(line.slice(1))}</td><td class="r empty"></td></tr>`);
-    else if (line.startsWith('+')) rows.push(`<tr><td class="l empty"></td><td class="r">${esc(line.slice(1))}</td></tr>`);
-    else rows.push(`<tr><td class="l">${esc(line.startsWith(' ') ? line.slice(1) : line)}</td><td class="r">${esc(line.startsWith(' ') ? line.slice(1) : line)}</td></tr>`);
+function renderDiffTable(diffText,nameA,nameB){
+  const rows=[];
+  for(const line of diffText.split('\n')){
+    if(line.startsWith('--- ')||line.startsWith('+++ ')) continue;
+    if(line.startsWith('@@')) rows.push('<tr class="hunk"><td colspan="2">'+esc(line)+'</td></tr>');
+    else if(line.startsWith('-')) rows.push('<tr><td class="l">'+esc(line.slice(1))+'</td><td class="r empty"></td></tr>');
+    else if(line.startsWith('+')) rows.push('<tr><td class="l empty"></td><td class="r">'+esc(line.slice(1))+'</td></tr>');
+    else rows.push('<tr><td class="l">'+esc(line.startsWith(' ')?line.slice(1):line)+'</td><td class="r">'+esc(line.startsWith(' ')?line.slice(1):line)+'</td></tr>');
   }
-  return `<table class="diff-table"><thead><tr><th>${esc(nameA)} (A)</th><th>${esc(nameB)} (B)</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+  return '<table class="diff-table"><thead><tr><th>'+esc(nameA)+' (A)</th><th>'+esc(nameB)+' (B)</th></tr></thead><tbody>'+rows.join('')+'</tbody></table>';
 }
+document.getElementById('closeBtn').addEventListener('click',()=>document.getElementById('overlay').classList.remove('open'));
+document.getElementById('overlay').addEventListener('click',(e)=>{ if(e.target===e.currentTarget) e.currentTarget.classList.remove('open'); });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') document.getElementById('overlay').classList.remove('open'); });
 
-document.getElementById('closeBtn').addEventListener('click', () => {
-  document.getElementById('overlay').classList.remove('open');
-  clearSelection();
-});
-document.getElementById('overlay').addEventListener('click', (e) => {
-  if (e.target === e.currentTarget) {
-    e.currentTarget.classList.remove('open');
-    clearSelection();
-  }
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    document.getElementById('overlay').classList.remove('open');
-    clearSelection();
-  }
-});
+/* ---------- 顶部 ---------- */
+(function top(){
+  const s=DATA.summary;
+  const items=[
+    ['共有文件',s.common],['完全相同',s.identical],['仅项目名不同',s.sameByRename],
+    ['相似(漂移)',s.similar],['差异较大',s.diverged],
+    ['仅 '+NAME_A,s.onlyA],['仅 '+NAME_B,s.onlyB]
+  ];
+  document.getElementById('cards').innerHTML=items.map(([l,n])=>
+    '<div class="card"><div class="num">'+n+'</div><div class="label">'+esc(l)+'</div></div>').join('');
+  document.getElementById('thA').textContent=NAME_A;
+  document.getElementById('thB').textContent=NAME_B;
+  document.getElementById('meta').textContent=
+    NAME_A+' ('+DATA.meta.dirA+')  ↔  '+NAME_B+' ('+DATA.meta.dirB+')    生成：'+DATA.meta.generatedAt+
+    (DATA.meta.excludePatterns&&DATA.meta.excludePatterns.length
+      ? '    已排除 '+DATA.meta.excludedCount+' 个文件：'+DATA.meta.excludePatterns.join(' , ') : '');
+})();
 
-/* ---------- 初始化 ---------- */
-renderTree('A');
-renderTree('B');
-applyFilter();
+render();
 </script>
 </body>
 </html>
