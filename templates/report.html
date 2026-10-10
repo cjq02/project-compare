@@ -30,6 +30,7 @@
   table.tree-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.tree-table th { position: sticky; top: 0; background: #f0f2f5; z-index: 2; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; white-space: nowrap; }
   table.tree-table td { padding: 4px 12px; border-bottom: 1px solid #f1f2f4; vertical-align: middle; }
+  table.tree-table tr.row { cursor: pointer; }
   table.tree-table tr.row:hover td { background: var(--hover); }
   table.tree-table tr.dir td { background: #fafbfc; font-weight: 500; }
   table.tree-table tr.dir:hover td { background: #f0f4f8; }
@@ -247,7 +248,7 @@ function render(){
       out.push(
         '<tr class="row dir" data-path="'+esc(d.path)+'" data-type="dir">'+
         '<td><div class="name-cell" style="padding-left:'+(depth*18)+'px">'+
-          '<span class="chev'+(open?' open':'')+'" data-toggle="'+esc(d.path)+'">&#9654;</span>'+
+          '<span class="chev'+(open?' open':'')+'">&#9654;</span>'+
           '<span class="dot s-'+st+'"></span><span class="nm">'+esc(d.name)+'</span>'+
           '<span class="fcount">'+c.total+'</span></div></td>'+
         '<td class="side"><span class="ok">'+c.countA+'</span></td>'+
@@ -283,14 +284,15 @@ function render(){
 
 /* ---------- 交互 ---------- */
 document.getElementById('tbody').addEventListener('click',(ev)=>{
-  const t=ev.target.closest('[data-toggle]');
-  if(t){
-    const p=t.getAttribute('data-toggle');
+  // 目录行：点击任意位置展开/折叠
+  const dirRow=ev.target.closest('tr[data-type="dir"]');
+  if(dirRow){
+    const p=dirRow.getAttribute('data-path');
     if(state.expanded.has(p)) state.expanded.delete(p); else state.expanded.add(p);
     render();
     return;
   }
-  // 整个文件行都可点开弹窗（不限于状态标签）
+  // 文件行：点击任意位置打开弹窗
   const row=ev.target.closest('tr[data-type="file"]');
   if(row){
     const e=DATA.files.find(f=>f.key===row.getAttribute('data-key'));
