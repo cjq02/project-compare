@@ -54,7 +54,6 @@
   td.stat { white-space: nowrap; }
   td.stat .aggline { color: var(--muted); font-size: 11px; font-family: Consolas, monospace; }
   td.sim { font-family: Consolas, monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
-  td.sim.dir-act { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .subact { display: none; gap: 8px; flex-shrink: 0; }
   tr.dir:hover .subact { display: inline-flex; }
   .subact a { color: #0969da; cursor: pointer; font-size: 11px; white-space: nowrap; }
@@ -283,15 +282,15 @@ function render(){
         '<td><div class="name-cell" style="padding-left:'+(depth*18)+'px">'+
           '<span class="chev'+(open?' open':'')+'">&#9654;</span>'+
           '<span class="dot s-'+st+'"></span><span class="nm">'+esc(d.name)+'</span>'+
-          '<span class="fcount">'+c.total+'</span></div></td>'+
-        '<td class="side"><span class="ok">'+c.countA+'</span></td>'+
-        '<td class="side"><span class="ok">'+c.countB+'</span></td>'+
-        '<td class="stat"><span class="tag t-'+st+' disabled">'+(st==='MIXED'?'有差异':STATUS_TEXT[st])+'</span></td>'+
-        '<td class="sim dir-act">'+esc(aggLine(c))
+          '<span class="fcount">'+c.total+'</span>'
           +(d.dirs.size?'<span class="subact">'
             +'<a data-exp="'+esc(d.path)+'">全部展开</a>'
             +'<a data-col="'+esc(d.path)+'">全部折叠</a>'
-            +'</span>':'')+'</td></tr>'
+            +'</span>':'')+'</div></td>'+
+        '<td class="side"><span class="ok">'+c.countA+'</span></td>'+
+        '<td class="side"><span class="ok">'+c.countB+'</span></td>'+
+        '<td class="stat"><span class="tag t-'+st+' disabled">'+(st==='MIXED'?'有差异':STATUS_TEXT[st])+'</span></td>'+
+        '<td class="sim">'+esc(aggLine(c))+'</td></tr>'
       );
       if(open) emit(d,depth+1);
     }
