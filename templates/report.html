@@ -54,6 +54,11 @@
   td.stat { white-space: nowrap; }
   td.stat .aggline { color: var(--muted); font-size: 11px; font-family: Consolas, monospace; }
   td.sim { font-family: Consolas, monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  td.sim.dir-act { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .subact { display: none; gap: 8px; flex-shrink: 0; }
+  tr.dir:hover .subact { display: inline-flex; }
+  .subact a { color: #0969da; cursor: pointer; font-size: 11px; white-space: nowrap; }
+  .subact a:hover { text-decoration: underline; }
 
   .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
   .s-IDENTICAL { background: #1a7f37; }
@@ -177,6 +182,8 @@ const STATUS_TEXT={
 const ALL_STATUS=['IDENTICAL','SAME_BY_RENAME','SIMILAR','DIVERGED','ONLY_A','ONLY_B'];
 
 /* ---------- 合并树 ---------- */
+/** path -> 目录节点，供子树递归展开/折叠时定位 */
+const nodeIndex=new Map();
 function buildTree(){
   const root={name:'',path:'',dirs:new Map(),files:[],type:'dir'};
   for(const f of DATA.files){
@@ -184,7 +191,10 @@ function buildTree(){
     let node=root;
     for(let i=0;i<parts.length-1;i++){
       if(!node.dirs.has(parts[i])){
-        node.dirs.set(parts[i],{name:parts[i],path:parts.slice(0,i+1).join('/'),dirs:new Map(),files:[],type:'dir'});
+        const p=parts.slice(0,i+1).join('/');
+        const child={name:parts[i],path:p,dirs:new Map(),files:[],type:'dir'};
+        node.dirs.set(parts[i],child);
+        nodeIndex.set(p,child);
       }
       node=node.dirs.get(parts[i]);
     }
@@ -277,7 +287,11 @@ function render(){
         '<td class="side"><span class="ok">'+c.countA+'</span></td>'+
         '<td class="side"><span class="ok">'+c.countB+'</span></td>'+
         '<td class="stat"><span class="tag t-'+st+' disabled">'+(st==='MIXED'?'有差异':STATUS_TEXT[st])+'</span></td>'+
-        '<td class="sim">'+esc(aggLine(c))+'</td></tr>'
+        '<td class="sim dir-act">'+esc(aggLine(c))
+          +(d.dirs.size?'<span class="subact">'
+            +'<a data-exp="'+esc(d.path)+'">全部展开</a>'
+            +'<a data-col="'+esc(d.path)+'">全部折叠</a>'
+            +'</span>':'')+'</td></tr>'
       );
       if(open) emit(d,depth+1);
     }
@@ -307,6 +321,11 @@ function render(){
 
 /* ---------- 交互 ---------- */
 document.getElementById('tbody').addEventListener('click',(ev)=>{
+  // 子树局部展开/折叠：必须先于"整行切换"判断（按钮位于目录行内部）
+  const exp=ev.target.closest('[data-exp]');
+  if(exp){ expandSubtree(exp.getAttribute('data-exp')); return; }
+  const col=ev.target.closest('[data-col]');
+  if(col){ collapseSubtree(col.getAttribute('data-col')); return; }
   // 目录行：点击任意位置展开/折叠
   const dirRow=ev.target.closest('tr[data-type="dir"]');
   if(dirRow){
@@ -327,6 +346,21 @@ document.getElementById('expandAll').addEventListener('click',()=>{
   render();
 });
 document.getElementById('collapseAll').addEventListener('click',()=>{ state.expanded.clear(); render(); });
+
+/** 递归展开某目录的全部子目录（该目录自身保持展开） */
+function expandSubtree(path){
+  const node=nodeIndex.get(path);
+  if(!node) return;
+  (function walk(n){ for(const d of n.dirs.values()){ state.expanded.add(d.path); walk(d); } })(node);
+  render();
+}
+/** 递归折叠某目录的全部子目录（该目录自身保持展开，便于看到结果） */
+function collapseSubtree(path){
+  const node=nodeIndex.get(path);
+  if(!node) return;
+  (function walk(n){ for(const d of n.dirs.values()){ state.expanded.delete(d.path); walk(d); } })(node);
+  render();
+}
 
 let timer;
 document.getElementById('search').addEventListener('input',(e)=>{
