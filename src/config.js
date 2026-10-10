@@ -64,13 +64,13 @@ function resolveOptions(env, cli) {
       ...splitList(env.INCLUDE),
       ...splitList(env.INCLUDE_DIRS),
       ...splitList(env.INCLUDE_FILES),
-      ...cli.include,
+      ...cli.include.flatMap(splitList),
     ],
     exclude: [
       ...splitList(env.EXCLUDE),
       ...splitList(env.EXCLUDE_DIRS),
       ...splitList(env.EXCLUDE_FILES),
-      ...cli.exclude,
+      ...cli.exclude.flatMap(splitList),
     ],
   };
 }

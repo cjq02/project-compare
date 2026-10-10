@@ -100,10 +100,9 @@ Reporter（report.json + report.html + 控制台摘要）
 
 ### 3.2 技术选型
 
-- **Node.js 脚本**（两个项目前端本身是 Node 技术栈，零额外依赖环境）：
-  - `fast-glob` 扫描、`crypto` 哈希、`diff`（jsdiff）算相似度
-  - 单入口 CLI：`node compare.js <项目A> <项目B> [-o 输出目录]`
-- 也可用 PowerShell/.NET 实现（本机已验证可行），但 HTML 报告与后续扩展用 Node 更顺手。
+- **Node.js 脚本，零 npm 依赖**（Node ≥ 16，仅用 `fs` / `path` / `crypto`；自带简易 glob 与 LCS diff 实现）：
+  - 配置来自 `.env`（自带极简解析，无需 dotenv）
+  - 单入口 CLI：`node src/compare.js [项目A 项目B] [--include 规则] [--exclude 规则]`
 
 ### 3.3 相似度算法
 
@@ -115,10 +114,14 @@ Reporter（report.json + report.html + 控制台摘要）
 
 ### 3.4 报告内容（report.html）
 
-- 总览卡片：各分类数量、占比
-- **漂移公共代码清单**：164 个 `SIMILAR` 文件，按相似度排序，点击看双栏 diff
-- 纯公共代码清单：528 个 `IDENTICAL` + 若干 `SAME_BY_RENAME`（可一键导出为公共模块文件列表）
-- 单边独有文件树（业务代码，仅统计不展开）
+自包含单文件 HTML，**左右双树布局**：
+
+- 顶部：概览卡片（各分类数量）+ 搜索框 + 范围过滤下拉（全部 / 两边共有 / 有差异 / 无差异 / 仅单边）+ 图例
+- 左右两栏：各项目的**文件树**，可展开/折叠，文件按状态打点着色，右上角显示"可见 / 总数"
+- **点击任一文件 → 弹窗显示左右双栏 diff**（左红右绿，`@@` hunk 分段），共有文件在对侧树同步高亮
+  - `IDENTICAL` / `SAME_BY_RENAME`：弹窗说明性质，不展示 diff
+  - `SIMILAR` / `DIVERGED`：展示双栏 diff
+  - `ONLY_A` / `ONLY_B`：说明为单边业务代码，不做对比
 
 ### 3.5 实施步骤
 
@@ -129,19 +132,23 @@ Reporter（report.json + report.html + 控制台摘要）
 | M3 | jscpd 跨路径克隆检测（可选二期） | 1 天 |
 | M4 | 基于报告输出《公共代码抽取建议》 | 0.5 天 |
 
-### 3.6 本仓库（project-compare）建议目录
+### 3.6 本仓库（project-compare）目录结构
 
 ```
 project-compare/
-├── docs/PLAN.md          # 本文档
+├── docs/PLAN.md           # 本文档
+├── .env                   # 运行配置（gitignore，复制 .env.example）
+├── .env.example           # 配置模板
 ├── src/
-│   ├── compare.js        # CLI 入口
-│   ├── scanner.js        # 文件扫描
-│   ├── normalizer.js     # 路径/内容归一化
-│   ├── comparator.js     # 哈希 + diff 相似度
-│   └── reporter.js       # JSON/HTML 输出
-├── templates/report.html # 报告模板
-└── output/               # 运行产物（gitignore）
+│   ├── compare.js         # CLI 入口：扫描→过滤→归一化→比较→报告
+│   ├── config.js          # .env 解析与配置合并（默认 < .env < CLI）
+│   ├── scanner.js         # 文件扫描（固定排除 node_modules/target/dist/.git/.idea）
+│   ├── normalizer.js      # 路径/内容归一化（识别项目名五种形态）
+│   ├── exclude.js         # include 白名单 + exclude 黑名单（简易 glob）
+│   ├── comparator.js      # MD5 快筛 → LCS 逐行 diff → 相似度
+│   └── reporter.js        # JSON/HTML 输出
+├── templates/report.html  # 报告模板（双树 + 弹窗 diff）
+└── output/                # 运行产物（gitignore）
 ```
 
 ---
@@ -149,9 +156,34 @@ project-compare/
 ## 4. 使用方法（已实现 ✅）
 
 ```powershell
-node src/compare.js <项目A目录> <项目B目录> [-o 输出目录] [-t 相似度阈值] [--max-diff-lines n]
-# 例如
-node src/compare.js D:\sizai\projects\lottery-fund D:\sizai\projects\sport-asset
+# 全部参数取自 .env（复制 .env.example 为 .env 并修改）
+node src/compare.js
+
+# 或命令行直接指定
+node src/compare.js <项目A目录> <项目B目录> --include "{PROJECT}-vue/src/utils/**"
+```
+
+### 配置（.env）
+
+| 键 | 说明 |
+|---|---|
+| `PROJECT_A` / `PROJECT_B` | 两个项目目录 |
+| `OUT_DIR` | 输出目录（默认 `./output`） |
+| `THRESHOLD` | SIMILAR 阈值，默认 0.8 |
+| `MAX_DIFF_LINES` | 每文件内嵌 diff 最大行数，默认 300 |
+| `INCLUDE_DIRS` / `INCLUDE_FILES` | **白名单**，逗号分隔；非空则只对比命中范围 |
+| `EXCLUDE_DIRS` / `EXCLUDE_FILES` | **黑名单**，在白名单基础上再剔除 |
+
+**过滤顺序**：先按 INCLUDE 圈定范围（为空 = 全量），再按 EXCLUDE 剔除。
+
+规则语法：`*` 不跨目录、`**` 跨目录、`?` 单字符；命中目录即包含/排除其下全部文件。
+`{PROJECT}` 为项目名占位符，一条规则同时作用于两个项目（写具体项目名则只作用于单侧）。
+
+```ini
+# 例：只对比前端公共部分
+INCLUDE_DIRS={PROJECT}-vue/src/utils/**, {PROJECT}-vue/src/components/**, {PROJECT}-vue/src/hooks/**
+# 例：再剔除某项目的临时目录
+EXCLUDE_DIRS=sport-asset-vue/temp
 ```
 
 - 输出：`output/report.html`（自包含，可直接分发）+ `output/report.json`（供后续处理）
