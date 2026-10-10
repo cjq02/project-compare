@@ -78,11 +78,13 @@
   .diff-table th { position: sticky; top: 0; background: #f0f2f5; z-index: 2; padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12px; }
   .diff-table td { padding: 0 10px; vertical-align: top; white-space: pre-wrap; word-break: break-all; border-bottom: 1px solid #f0f1f2; }
   .diff-table td.c { width: 44%; }
-  .diff-table td.ln { width: 52px; min-width: 52px; text-align: right; padding: 0 8px; color: #8b949e; background: #f6f8fa; border-right: 1px solid var(--border); user-select: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .diff-table td.l { background: #fff5f4; border-right: 1px solid var(--border); }
+  .diff-table td.ln { width: 46px; min-width: 46px; padding: 0 6px; color: #8b949e; background: #f6f8fa; user-select: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .diff-table td.ln-a { text-align: right; border-right: 1px solid var(--border); }
+  .diff-table td.ln-b { text-align: left; }
+  .diff-table td.l { background: #fff5f4; }
   .diff-table td.r { background: #f0fff4; }
   .diff-table td.empty { background: #fafbfc; }
-  .diff-table th.ln-h { text-align: right; padding-right: 8px; color: var(--muted); font-weight: 500; }
+  .diff-table th.ln-h { text-align: center; padding: 6px 6px; }
   .diff-table tr.hunk td { background: #ddf4ff; color: var(--muted); }
   .msg-box { margin: 30px auto; max-width: 560px; text-align: center; color: var(--muted); font-size: 14px; }
   .msg-box .big { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
@@ -368,15 +370,16 @@ function renderDiffTable(diffText,nameA,nameB){
     const body=esc(line.startsWith(' ')||isDel||isAdd?line.slice(1):line);
     const aCell=isAdd?'<td class="l c empty"></td>':'<td class="l c">'+body+'</td>';
     const bCell=isDel?'<td class="r c empty"></td>':'<td class="r c">'+body+'</td>';
-    const aLn='<td class="ln">'+(isAdd||aNum==null?'':aNum)+'</td>';
-    const bLn='<td class="ln">'+(isDel||bNum==null?'':bNum)+'</td>';
-    rows.push('<tr>'+aLn+aCell+bCell+bLn+'</tr>');
+    const aLn='<td class="ln ln-a">'+(isAdd||aNum==null?'':aNum)+'</td>';
+    const bLn='<td class="ln ln-b">'+(isDel||bNum==null?'':bNum)+'</td>';
+    // 行号列居中并列：A内容 | A行号 | B行号 | B内容，便于左右对照
+    rows.push('<tr>'+aCell+aLn+bLn+bCell+'</tr>');
     if(!isAdd&&aNum!=null) aNum++;
     if(!isDel&&bNum!=null) bNum++;
   }
   return '<table class="diff-table"><thead><tr>'
-    +'<th class="ln-h"></th><th>'+esc(nameA)+' (A)</th>'
-    +'<th>'+esc(nameB)+' (B)</th><th class="ln-h"></th>'
+    +'<th>'+esc(nameA)+' (A)</th><th class="ln-h"></th><th class="ln-h"></th>'
+    +'<th>'+esc(nameB)+' (B)</th>'
     +'</tr></thead><tbody>'+rows.join('')+'</tbody></table>';
 }
 document.getElementById('closeBtn').addEventListener('click',()=>document.getElementById('overlay').classList.remove('open'));
