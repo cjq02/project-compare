@@ -109,17 +109,17 @@ function main() {
 
   console.log('[2/3] 路径归一化并比较...');
   let excludedCount = 0;
-  const keep = (rels, name) => rels.filter((rel) => {
-    const drop = !filter.keep(rel, normalizePathKey(rel, name));
+  const keep = (rels, nameForms) => rels.filter((rel) => {
+    const drop = !filter.keep(rel, normalizePathKey(rel, nameForms));
     if (drop) excludedCount++;
     return !drop;
   });
-  const relsA = keep(relsA0, nameA);
-  const relsB = keep(relsB0, nameB);
+  const relsA = keep(relsA0, formsA);
+  const relsB = keep(relsB0, formsB);
   console.log(`  排除 ${excludedCount} 个文件 -> A: ${relsA.length}, B: ${relsB.length}`);
 
-  const mapA = new Map(relsA.map((rel) => [normalizePathKey(rel, nameA), { full: path.join(dirA, rel), rel }]));
-  const mapB = new Map(relsB.map((rel) => [normalizePathKey(rel, nameB), { full: path.join(dirB, rel), rel }]));
+  const mapA = new Map(relsA.map((rel) => [normalizePathKey(rel, formsA), { full: path.join(dirA, rel), rel }]));
+  const mapB = new Map(relsB.map((rel) => [normalizePathKey(rel, formsB), { full: path.join(dirB, rel), rel }]));
 
   const commonKeys = [...mapA.keys()].filter((k) => mapB.has(k));
   const onlyA = [...mapA.keys()].filter((k) => !mapB.has(k)).sort();

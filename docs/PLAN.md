@@ -110,7 +110,29 @@ Reporter（report.json + report.html + 控制台摘要）
 2. 归一化后 MD5 相同 → `SAME_BY_RENAME`
 3. 否则按行做 LCS diff，相似度 = 1 - (变更行数 / 两文件最大行数)：
    - ≥ 80% → `SIMILAR`（漂移的公共代码，按相似度降序输出 diff）
-   - < 80% → 视为各自演化，归入 `DIVERGED`（不展开）
+   - < 80% → 视为各自演化，归入 `DIVERGED`（弹窗仍可看 diff）
+
+### 3.3.1 归一化的七种项目名形态
+
+两个项目同源于一套脚手架，但项目名在不同位置有不同写法，形态识别不全会导致文件配不上对：
+
+| 形态 | 例（lottery-fund） | 用途 |
+|---|---|---|
+| kebab | `lottery-fund` | 模块目录前缀 |
+| snake | `lottery_fund` | 下划线命名 |
+| upper | `LOTTERY_FUND` | 常量 |
+| camel | `lotteryFund` | JS/TS 变量 |
+| pascal | `LotteryFund` | 类名 |
+| **dot** | `lottery.fund` | **Java 包名 / import** |
+| **slash** | `lottery/fund` | **Java 源文件相对路径** |
+
+dot/slash 两项是后补的：Java 文件的实际路径是 `com/jiujie/lottery/fund/...`，
+只做连字符形态替换时，两项目的 Java 文件永远配不上对。
+补上后共有文件 692 → 813。
+
+已知遗留：A 的 `common` 子包在 B 中改名为 `base`（72 个 Java 文件），
+因 `common` 也出现在前端 `{PROJECT}-vue/src/common/` 目录，不能做全局段替换，
+需锚定到 `com/jiujie/{pkg}/common/` 位置后再处理。
 
 ### 3.4 报告内容（report.html）
 
@@ -143,7 +165,7 @@ project-compare/
 │   ├── compare.js         # CLI 入口：扫描→过滤→归一化→比较→报告
 │   ├── config.js          # .env 解析与配置合并（默认 < .env < CLI）
 │   ├── scanner.js         # 文件扫描（固定排除 node_modules/target/dist/.git/.idea）
-│   ├── normalizer.js      # 路径/内容归一化（识别项目名五种形态）
+│   ├── normalizer.js      # 路径/内容归一化（识别项目名七种形态，含 Java 包名的 dot/slash）
 │   ├── exclude.js         # include 白名单 + exclude 黑名单（简易 glob）
 │   ├── comparator.js      # MD5 快筛 → LCS 逐行 diff → 相似度
 │   └── reporter.js        # JSON/HTML 输出

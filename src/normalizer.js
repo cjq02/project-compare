@@ -4,7 +4,9 @@ const PLACEHOLDER = '{PROJECT}';
 
 /**
  * 由项目名生成各种命名形态的替换规则
- * 例如 "lottery-fund" -> kebab/camel/pascal/snake/upper
+ * 例如 "lottery-fund" -> kebab/camel/pascal/snake/upper/dot/slash
+ * dot 形态用于 Java 包名与 import（com.jiujie.lottery.fund.*），
+ * slash 形态用于 Java 源文件的相对路径（com/jiujie/lottery/fund/...）
  * @param {string} name
  */
 function createNameForms(name) {
@@ -16,21 +18,27 @@ function createNameForms(name) {
   const pascal = camel ? camel[0].toUpperCase() + camel.slice(1) : name;
   const snake = parts.map((p) => p.toLowerCase()).join('_');
   const upper = snake.toUpperCase();
+  const dot = parts.map((p) => p.toLowerCase()).join('.');
+  const slash = parts.map((p) => p.toLowerCase()).join('/');
   // 按长度降序，避免短形态先替换造成截断
-  const forms = [...new Set([kebab, camel, pascal, snake, upper].filter(Boolean))]
+  const forms = [...new Set([kebab, camel, pascal, snake, upper, dot, slash].filter(Boolean))]
     .sort((a, b) => b.length - a.length);
-  return { kebab, camel, pascal, snake, upper, forms };
+  return { kebab, camel, pascal, snake, upper, dot, slash, forms };
 }
 
 /**
- * 路径归一化：把相对路径中的项目名（模块前缀）替换为 {PROJECT}
- * 例：lottery-fund-vue/src/main.ts -> {PROJECT}-vue/src/main.ts
+ * 路径归一化：
+ *  1. 包路径段（斜杠形态）跨目录，先整体替换：com/jiujie/lottery/fund/x -> com/jiujie/{pkgpath}/x
+ *  2. 再做模块前缀（连字符形态）替换：lottery-fund-vue -> {PROJECT}-vue
  * @param {string} relPath 相对路径（/ 分隔）
- * @param {string} name 项目名
+ * @param {{kebab: string, slash: string}} nameForms createNameForms() 的返回值
  */
-function normalizePathKey(relPath, name) {
+function normalizePathKey(relPath, nameForms) {
+  let p = relPath;
+  if (nameForms.slash) p = p.split(nameForms.slash).join('{pkgpath}');
+  const name = nameForms.kebab;
   const lower = name.toLowerCase();
-  return relPath
+  return p
     .split('/')
     .map((seg) => {
       let s = seg.split(name).join(PLACEHOLDER);
@@ -56,6 +64,8 @@ function normalizeContent(text, nameForms) {
 
 /** 根据形态判断占位符名称 */
 function formPlaceholderSuffix(form) {
+  if (form.includes('.')) return 'pkg';                // lottery.fund（Java 包名/import）
+  if (form.includes('/')) return 'pkgpath';            // lottery/fund（源文件相对路径）
   if (/^[A-Z0-9_]+$/.test(form)) return 'UPPER';      // LOTTERY_FUND
   if (/^[a-z0-9_]+$/.test(form) && form.includes('_')) return 'snake'; // lottery_fund
   if (/^[a-z0-9-]+$/.test(form)) return 'kebab';      // lottery-fund
