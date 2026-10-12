@@ -49,6 +49,66 @@ function normalizePathKey(relPath, nameForms) {
 }
 
 /**
+ * 解析 PATH_ALIAS 规则
+ * 语法：侧别(A|B)  锚点前缀  旧段 => 新段
+ * 例：  A com/jiujie/{pkgpath}/  common => base
+ *
+ * 为什么必须带侧别和锚点：
+ *  - A 项目同时存在 common/ 与 base/ 两个包，做全局段替换必然在 A 内部撞车
+ *  - {PROJECT}-vue/src/common/ 也含 common 段，全局替换还会误伤前端目录
+ * 故规则须指明作用于哪一侧、以及从哪个锚点之后才生效。
+ *
+ * @param {string[]} lines splitList() 的返回值
+ * @returns {{side:'A'|'B', anchor:string, from:string, to:string}[]}
+ */
+function parsePathAliases(lines) {
+  const out = [];
+  for (const raw of lines || []) {
+    const s = String(raw).trim();
+    if (!s) continue;
+    const m = /^([ABab])\s+(.+?)\s*=>\s*(\S+)$/.exec(s);
+    if (!m) {
+      throw new Error(`PATH_ALIAS 格式错误，应为 "A 锚点前缀 旧段 => 新段"，实际: ${raw}`);
+    }
+    const left = m[2].trim();
+    const sp = left.search(/\s+\S+$/);          // 最后一个空白分隔符之前是锚点
+    if (sp === -1) {
+      throw new Error(`PATH_ALIAS 缺少锚点前缀，应为 "A 锚点前缀 旧段 => 新段"，实际: ${raw}`);
+    }
+    out.push({
+      side: m[1].toUpperCase(),
+      anchor: left.slice(0, sp).trim(),
+      from: left.slice(sp).trim(),
+      to: m[3].trim(),
+    });
+  }
+  return out;
+}
+
+/**
+ * 对单个已归一化的路径 key 施加别名
+ * 只在 anchor 之后命中 from 这一整段时才替换，避免误伤前缀相同的段
+ * @param {string} key 归一化后的 key
+ * @param {{side:string, anchor:string, from:string, to:string}[]} aliases
+ * @param {'A'|'B'} side 当前文件属于哪一侧
+ */
+function applyPathAliases(key, aliases, side) {
+  if (!aliases || !aliases.length) return key;
+  let p = key;
+  for (const a of aliases) {
+    if (a.side !== side) continue;
+    const at = p.indexOf(a.anchor);            // 锚点在路径中段，不能用 startsWith
+    if (at === -1) continue;
+    const head = p.slice(0, at + a.anchor.length);
+    const rest = p.slice(at + a.anchor.length);
+    if (rest === a.from || rest.startsWith(a.from + '/')) {
+      p = head + a.to + rest.slice(a.from.length);
+    }
+  }
+  return p;
+}
+
+/**
  * 内容归一化：把文件内容中的项目名各形态替换为占位符，并统一换行符
  * 例：lotteryFundApi -> {camel}Api
  * @param {string} text
@@ -73,4 +133,4 @@ function formPlaceholderSuffix(form) {
   return 'pascal';                                     // LotteryFund
 }
 
-module.exports = { PLACEHOLDER, createNameForms, normalizePathKey, normalizeContent };
+module.exports = { PLACEHOLDER, createNameForms, normalizePathKey, normalizeContent, parsePathAliases, applyPathAliases };

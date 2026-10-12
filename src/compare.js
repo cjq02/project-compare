@@ -15,6 +15,7 @@ const HELP = `用法: node src/compare.js [项目A目录 项目B目录] [选项]
   -t, --threshold <0~1>      SIMILAR 相似度阈值（默认 0.8）
       --include <pattern>    白名单规则（可多次使用，与 .env 合并；非空则只对比命中文件）
       --exclude <pattern>    黑名单规则（可多次使用，与 .env 合并）
+      --path-alias <rule>    路径别名（可多次使用，与 .env 合并）
       --max-diff-lines <n>   每个文件内嵌 diff 最大行数（默认 300）
       --diff-tool <tool>     单击文件行拉起的 IDE：intellij | vscode | none（默认 intellij）
       --idea-exe <path>      IntelliJ 可执行文件路径（默认自动探测）
@@ -34,6 +35,7 @@ const HELP = `用法: node src/compare.js [项目A目录 项目B目录] [选项]
   INCLUDE_FILES           白名单，逗号分隔（与上合并）
   EXCLUDE_DIRS            黑名单，逗号分隔（命中目录则排除其下全部）
   EXCLUDE_FILES           黑名单，逗号分隔（与上合并）
+  PATH_ALIAS              路径别名，"A 锚点前缀 旧段 => 新段"，只作用于指定一侧
 
 过滤顺序: 先按 INCLUDE 圈定范围（为空 = 不限制），再按 EXCLUDE 剔除
 
@@ -44,6 +46,12 @@ const HELP = `用法: node src/compare.js [项目A目录 项目B目录] [选项]
       {PROJECT}-vue/src/components/**         两个项目的前端公共组件
       sport-asset-vue/temp                    只排除 sport-asset 的该目录
 
+路径别名（两侧包段叫法不同时，用于把文件配成对）:
+  语法: 侧别(A|B)  锚点前缀  旧段 => 新段
+  例:   A com/jiujie/{pkgpath}/  common => base
+        仅在 A 侧、锚点之后把包段 common 记作 base，从而与 B 侧的 base 配对
+  只影响配对，不改文件、不影响过滤；需带锚点以避免误伤前端同名目录
+
 示例:
   node src/compare.js                              # 全部参数取自 .env
   node src/compare.js A B --include "{PROJECT}-vue/src/utils/**"
@@ -51,7 +59,7 @@ const HELP = `用法: node src/compare.js [项目A目录 项目B目录] [选项]
 `;
 
 function parseArgs(argv) {
-  const cli = { dirs: [], out: null, threshold: null, maxDiffLines: null, include: [], exclude: [], envFile: null,
+  const cli = { dirs: [], out: null, threshold: null, maxDiffLines: null, include: [], exclude: [], pathAlias: [], envFile: null,
     diffTool: null, ideaExe: null, vscodeExe: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -61,6 +69,7 @@ function parseArgs(argv) {
     else if (a === '-t' || a === '--threshold') cli.threshold = parseFloat(argv[++i]);
     else if (a === '--include') cli.include.push(argv[++i]);
     else if (a === '--exclude') cli.exclude.push(argv[++i]);
+    else if (a === '--path-alias') cli.pathAlias.push(argv[++i]);
     else if (a === '--max-diff-lines') cli.maxDiffLines = parseInt(argv[++i], 10);
     else if (a === '--diff-tool') cli.diffTool = argv[++i];
     else if (a === '--idea-exe') cli.ideaExe = argv[++i];

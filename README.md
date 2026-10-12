@@ -96,6 +96,7 @@ Reporter     report.json + report.html + 控制台摘要
 | `IDEA_EXE` / `VSCODE_EXE` | 可执行文件路径，留空自动探测 |
 | `INCLUDE_DIRS` / `INCLUDE_FILES` | 白名单 |
 | `EXCLUDE_DIRS` / `EXCLUDE_FILES` | 黑名单 |
+| `PATH_ALIAS` | 路径别名，两侧包段叫法不同时用于配对 |
 
 ### 列表值可以写多行
 
@@ -145,6 +146,52 @@ EXCLUDE_DIRS=
    !{PROJECT}-vue/src/common/constants*
    ```
 3. 写具体项目名（如 `sport-asset-vue/temp`）则只作用于单侧。
+
+---
+
+## 路径别名（PATH_ALIAS）
+
+Java 包名的**项目前缀**已经被归一化了 —— `com/jiujie/lottery/fund/...` ↔ `com/jiujie/sport/asset/...` 会统一成 `com/jiujie/{pkgpath}/...`，不用再配。
+
+但**子包名**也可能不同（A 的 `common` 包在 B 里叫 `base`），这时用别名把文件配成对：
+
+```ini
+PATH_ALIAS=
+  A com/jiujie/{pkgpath}/  common => base
+```
+
+语法：`侧别(A|B)  锚点前缀  旧段 => 新段`
+
+- **只作用于指定的一侧** —— A、B 各自归一化，所以必须带侧别
+- **只在锚点之后命中「整段」时才替换** —— `commonx/` 不会被误伤
+- **只影响配对** —— 不改文件内容，也不参与 INCLUDE/EXCLUDE 过滤（过滤已按真实路径完成）
+
+### 为什么必须带侧别和锚点
+
+不能做全局段替换，两个原因：
+
+1. **A 项目同时存在 `common/` 与 `base/` 两个包**，两边都归一成同一个名字会在 A 内部撞车
+2. `{PROJECT}-vue/src/common/` 也含 `common` 段，全局替换还会误伤前端目录
+
+以 lottery-fund ↔ sport-asset 实测：
+
+```
+A 自身 common ∩ base    0 个   ← 别名不会在 A 内部撞车
+A common     ∩ B base  71 个   ← 别名的收益
+A base       ∩ B base   0 个   ← 不会误配
+```
+
+加上这条别名后，配对成功的 Java 文件 **121 → 194**（+73）。
+
+### 报告里的表现
+
+别名只改**配对键**，所以报告的 `key` 会显示别名后的形式，但 A/B 两列显示的仍是真实路径：
+
+```
+key = {PROJECT}-api/src/main/java/com/jiujie/{pkgpath}/base/Constants.java
+  A = lottery-fund-api/.../com/jiujie/lottery/fund/common/Constants.java
+  B = sport-asset-api/.../com/jiujie/sport/asset/base/Constants.java
+```
 
 ---
 
@@ -246,7 +293,8 @@ project-compare/
 
 ## 已知限制
 
-- **归一化只处理项目名本身**。若两项目还有其他系统性命名差异（如 A 的 `common` 子包在 B 中改名为 `base`），需要额外的替换规则 —— 且不能做全局段替换，得先锚定位置。
+- **归一化只处理项目名本身**。其他系统性命名差异（如 A 的 `common` 子包在 B 中改名为 `base`）需要显式配 `PATH_ALIAS`，不能做全局段替换。
+- **包段不同的业务代码无法归一化** —— 若两侧子包名对应的是不同业务域（如 A 的 `budget` 对 B 的 `rent`/`inventory`/`lend`），它们就是各自的业务代码，别名也无从映射。
 - 二进制文件只做哈希比较，不参与 diff。
 - 大文件的 LCS 有格数上限（2500 万格），超过则只给出摘要不内嵌 diff。
 - BOM 与换行风格视为噪音，在解码阶段消除，两侧同等对待。

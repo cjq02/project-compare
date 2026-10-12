@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { scan } = require('./scanner');
-const { createNameForms, normalizePathKey } = require('./normalizer');
+const { createNameForms, normalizePathKey, parsePathAliases, applyPathAliases } = require('./normalizer');
 const { comparePair } = require('./comparator');
 const { compileFilter } = require('./exclude');
 const { writeReport } = require('./reporter');
@@ -31,6 +31,7 @@ function runCompare(opts, envFile, log) {
   const formsA = createNameForms(nameA);
   const formsB = createNameForms(nameB);
   const filter = compileFilter(opts.include, opts.exclude);
+  const pathAliases = parsePathAliases(opts.pathAlias);
   const outDir = path.resolve(opts.out || './output');
 
   say(`项目A: ${nameA}  (${dirA})`);
@@ -44,6 +45,10 @@ function runCompare(opts, envFile, log) {
   if (filter.excludePatterns.length) {
     say(`黑名单 ${filter.excludePatterns.length} 条:`);
     filter.excludePatterns.forEach((p) => say(`  - ${p}`));
+  }
+  if (pathAliases.length) {
+    say(`路径别名 ${pathAliases.length} 条（仅影响配对，不改文件、不影响过滤）:`);
+    pathAliases.forEach((a) => say(`  ~ ${a.side}: ${a.anchor}${a.from}  =>  ${a.anchor}${a.to}`));
   }
 
   say('[1/3] 扫描文件...');
@@ -62,8 +67,9 @@ function runCompare(opts, envFile, log) {
   const relsB = keep(relsB0, formsB);
   say(`  排除 ${excludedCount} 个文件 -> A: ${relsA.length}, B: ${relsB.length}`);
 
-  const mapA = new Map(relsA.map((rel) => [normalizePathKey(rel, formsA), { full: path.join(dirA, rel), rel }]));
-  const mapB = new Map(relsB.map((rel) => [normalizePathKey(rel, formsB), { full: path.join(dirB, rel), rel }]));
+  // 别名只施加在配对键上 —— 过滤已在上一步按真实路径完成，避免别名反过来改变过滤结果
+  const mapA = new Map(relsA.map((rel) => [applyPathAliases(normalizePathKey(rel, formsA), pathAliases, 'A'), { full: path.join(dirA, rel), rel }]));
+  const mapB = new Map(relsB.map((rel) => [applyPathAliases(normalizePathKey(rel, formsB), pathAliases, 'B'), { full: path.join(dirB, rel), rel }]));
 
   const commonKeys = [...mapA.keys()].filter((k) => mapB.has(k));
   const onlyA = [...mapA.keys()].filter((k) => !mapB.has(k)).sort();
@@ -109,6 +115,7 @@ function runCompare(opts, envFile, log) {
       threshold: opts.threshold,
       includePatterns: filter.includePatterns,
       excludePatterns: filter.excludePatterns,
+      pathAliases: pathAliases.map((a) => `${a.side}: ${a.anchor}${a.from} => ${a.to}`),
       excludedCount,
       envFile: envFile || null,
     },

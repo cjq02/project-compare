@@ -120,6 +120,11 @@ function resolveOptions(env, cli) {
       ...splitList(env.EXCLUDE_FILES),
       ...cli.exclude.flatMap(splitList),
     ],
+    // 路径别名：只作用于指定一侧，仅影响配对，不改文件也不影响过滤
+    pathAlias: [
+      ...splitList(env.PATH_ALIAS),
+      ...cli.pathAlias.flatMap(splitList),
+    ],
     // 单击文件行时拉起的 IDE 对比工具：intellij | vscode | none
     diffTool: normalizeDiffTool(cli.diffTool != null ? cli.diffTool : env.DIFF_TOOL),
     // 两个 IDE 的可执行文件覆盖（留空 = 自动探测）

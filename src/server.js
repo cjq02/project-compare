@@ -32,7 +32,7 @@ const IGNORE_DIR_RE = /(^|\/)(node_modules|target|dist|\.git|\.idea|output)(\/|$
 const SYNCABLE = new Set(['SIMILAR', 'DIVERGED']);
 
 const { opts, envFile } = buildOptions({
-  dirs: [], out: null, threshold: null, maxDiffLines: null, include: [], exclude: [], envFile: null,
+  dirs: [], out: null, threshold: null, maxDiffLines: null, include: [], exclude: [], pathAlias: [], envFile: null,
   diffTool: null, ideaExe: null, vscodeExe: null,
 });
 const port = Number(process.env.PORT) || Number(loadPortFromEnv()) || DEFAULT_PORT;
