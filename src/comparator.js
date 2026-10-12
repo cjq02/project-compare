@@ -1,6 +1,6 @@
 'use strict';
 const crypto = require('crypto');
-const { normalizeContent } = require('./normalizer');
+const { normalizeContent, applyContentAliases } = require('./normalizer');
 
 const DEFAULTS = {
   maxFileSize: 5 * 1024 * 1024, // 超过 5MB 只做哈希比较
@@ -11,6 +11,8 @@ const DEFAULTS = {
   // 200 万太保守：1500 行级别的文件（如 1537x1490=229 万格）就会被放弃。
   // 2500 万可覆盖到约 5000x5000 行的文件对，当前对比集内最大仅 967 万格。
   lcsCellLimit: 25_000_000,
+  // 路径别名：内容归一化后再做一次，使"只有包段叫法不同"的文件判为相同
+  pathAliases: [],
 };
 
 function md5(text) {
@@ -176,8 +178,8 @@ function comparePair(fullA, fullB, formsA, formsB, opts = {}) {
     return { ...base, status: 'IDENTICAL', noiseOnly, linesA: rawA.split('\n').length, linesB: rawB.split('\n').length };
   }
 
-  const normA = normalizeContent(rawA, formsA);
-  const normB = normalizeContent(rawB, formsB);
+  const normA = applyContentAliases(normalizeContent(rawA, formsA), o.pathAliases, 'A');
+  const normB = applyContentAliases(normalizeContent(rawB, formsB), o.pathAliases, 'B');
   if (md5(normA) === md5(normB)) {
     return { ...base, status: 'SAME_BY_RENAME', linesA: rawA.split('\n').length, linesB: rawB.split('\n').length };
   }

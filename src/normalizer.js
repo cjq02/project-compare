@@ -108,6 +108,42 @@ function applyPathAliases(key, aliases, side) {
   return p;
 }
 
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 对已归一化的内容施加路径别名
+ *
+ * 路径别名原本只改配对键，于是"只有包段叫法不同"的两个文件
+ * （A 的 ...common.annotation 与 B 的 ...base.annotation）配上了，
+ * 内容归一化后 package / import 行却仍不同，状态停在 SIMILAR。
+ * 故内容也要做同样的别名替换。
+ *
+ * 锚点用占位符形式（内容归一化已把项目名换成 {pkg} / {pkgpath}）：
+ *   路径锚点 com/jiujie/{pkgpath}/  ->  包名锚点 com.jiujie.{pkg}
+ * 同时覆盖包名与导入（点分）和注释里的路径（斜杠分）两种写法。
+ *
+ * @param {string} text 已经过 normalizeContent 的文本
+ * @param {{side:string, anchor:string, from:string, to:string}[]} aliases
+ * @param {'A'|'B'} side
+ */
+function applyContentAliases(text, aliases, side) {
+  if (!aliases || !aliases.length) return text;
+  let out = text;
+  for (const a of aliases) {
+    if (a.side !== side) continue;
+    const slashAnchor = a.anchor.replace(/\/+$/, '');
+    const dotAnchor = slashAnchor.split('/').join('.').split('{pkgpath}').join('{pkg}');
+    // 分隔符本身是段边界，故边界只排除标识符字符，不排 . 与 /
+    for (const [anchor, sep] of [[slashAnchor, '/'], [dotAnchor, '.']]) {
+      const re = new RegExp(escapeRegExp(anchor + sep + a.from) + '(?![A-Za-z0-9_$])', 'g');
+      out = out.replace(re, anchor + sep + a.to);
+    }
+  }
+  return out;
+}
+
 /**
  * 内容归一化：把文件内容中的项目名各形态替换为占位符，并统一换行符
  * 例：lotteryFundApi -> {camel}Api
@@ -133,4 +169,4 @@ function formPlaceholderSuffix(form) {
   return 'pascal';                                     // LotteryFund
 }
 
-module.exports = { PLACEHOLDER, createNameForms, normalizePathKey, normalizeContent, parsePathAliases, applyPathAliases };
+module.exports = { PLACEHOLDER, createNameForms, normalizePathKey, normalizeContent, parsePathAliases, applyPathAliases, applyContentAliases };

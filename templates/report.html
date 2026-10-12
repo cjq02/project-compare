@@ -12,8 +12,7 @@
   * { box-sizing: border-box; }
   body { margin: 0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
   header { background: var(--card); border-bottom: 1px solid var(--border); padding: 10px 20px; flex-shrink: 0; }
-  header h1 { margin: 0 0 2px; font-size: 17px; }
-  header .meta { color: var(--muted); font-size: 11px; }
+  header h1 { margin: 0; font-size: 17px; }
   .cards { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 20px 0; flex-shrink: 0; align-items: stretch; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 14px; min-width: 96px; }
   .card .num { font-size: 19px; font-weight: 700; line-height: 1.2; }
@@ -172,7 +171,6 @@
 <body>
 <header>
   <h1>项目公共代码对比报告</h1>
-  <div class="meta" id="meta"></div>
 </header>
 <div class="cards" id="cards"></div>
 <div class="toolbar">
@@ -857,10 +855,6 @@ if(location.protocol==='http:'||location.protocol==='https:'){
     '<div class="card"><div class="num">'+n+'</div><div class="label">'+esc(l)+'</div></div>').join('');
   document.getElementById('thA').textContent=NAME_A;
   document.getElementById('thB').textContent=NAME_B;
-  document.getElementById('meta').textContent=
-    NAME_A+' ('+DATA.meta.dirA+')  ↔  '+NAME_B+' ('+DATA.meta.dirB+')    生成：'+DATA.meta.generatedAt+
-    (DATA.meta.excludePatterns&&DATA.meta.excludePatterns.length
-      ? '    已排除 '+DATA.meta.excludedCount+' 个文件：'+DATA.meta.excludePatterns.join(' , ') : '');
 })();
 
 render();

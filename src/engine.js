@@ -76,7 +76,7 @@ function runCompare(opts, envFile, log) {
   const onlyB = [...mapB.keys()].filter((k) => !mapA.has(k)).sort();
 
   const files = [];
-  const cmpOpts = { similarityThreshold: opts.threshold, maxDiffLines: opts.maxDiffLines };
+  const cmpOpts = { similarityThreshold: opts.threshold, maxDiffLines: opts.maxDiffLines, pathAliases };
   let done = 0;
   for (const key of commonKeys) {
     const a = mapA.get(key), b = mapB.get(key);
